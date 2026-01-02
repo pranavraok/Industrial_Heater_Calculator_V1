@@ -1,4 +1,3 @@
-// ---------- DOM REFERENCES ----------
 const landing = document.getElementById("landing");
 const calculator = document.getElementById("calculator");
 const passwordModal = document.getElementById("passwordModal");
@@ -14,19 +13,15 @@ const coreOD = document.getElementById("coreOD");
 const coreLength = document.getElementById("coreLength");
 const extraInput = document.getElementById("extra");
 
-// ---------- ADMIN ----------
 const ADMIN_PASSWORD = "electro123";
 
-// ---------- SUPABASE INIT (FIXED) ----------
 const supabaseClient = window.supabase.createClient(
   "https://zgwpjwywbnhrwzlucvwe.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpnd3Bqd3l3Ym5ocnd6bHVjdndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzEyODAsImV4cCI6MjA4Mjk0NzI4MH0.jNlLdo4lAoVVNauhAqY0v_8L_sY_XVdlnsV230BaoAY"
 );
 
-// ---------- GLOBAL DB ----------
 let nichromeData = [];
 
-// ---------- LOAD DB FROM SUPABASE ----------
 async function loadDatabase() {
   const { data, error } = await supabaseClient
     .from("nichrome_wires")
@@ -44,7 +39,6 @@ async function loadDatabase() {
 
 loadDatabase();
 
-// ---------- UI NAV ----------
 function openCalculator() {
   landing.classList.add("hidden");
   dbEditor.classList.add("hidden");
@@ -107,7 +101,6 @@ function renderDB() {
   `;
 }
 
-// ---------- SAVE DB ----------
 async function saveDatabase() {
   const rows = [...dbTable.rows].slice(1);
 
@@ -138,7 +131,6 @@ async function saveDatabase() {
   loadDatabase();
 }
 
-// ---------- CALCULATION (UNCHANGED) ----------
 function calculate() {
   const W = +wattage.value;
   const V = +voltage.value;
@@ -240,7 +232,6 @@ function calculate() {
   `;
 }
 
-// ---------- ENTER KEY ----------
 dbPassword.addEventListener("keypress", function(e) {
   if (e.key === "Enter") {
     checkPassword();
