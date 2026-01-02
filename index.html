@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Heater Coil Calculator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<h1>Industrial Heater Coil Calculator</h1>
+<p class="subtitle">Nichrome coil design – rule based & transparent</p>
+
+<div class="container">
+
+  <div class="form">
+    <div>
+      <label>Wattage (W)</label>
+      <input id="wattage" type="number" placeholder="e.g. 300">
+    </div>
+
+    <div>
+      <label>Voltage (V)</label>
+      <input id="voltage" type="number" placeholder="e.g. 240">
+    </div>
+
+    <div>
+      <label>Core OD (mm)</label>
+      <input id="coreOD" type="number" placeholder="e.g. 10">
+    </div>
+
+    <div>
+      <label>Core Length (mm)</label>
+      <input id="coreLength" type="number" placeholder="e.g. 130">
+    </div>
+
+    <div>
+      <label>Extra Resistance (%)</label>
+      <input id="extra" type="number" placeholder="e.g. 20">
+    </div>
+
+    <button onclick="calculate()">Calculate</button>
+  </div>
+
+  <div id="result"></div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
