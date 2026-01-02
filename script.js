@@ -1,4 +1,3 @@
-// ---------- DOM REFERENCES ----------
 const landing = document.getElementById("landing");
 const calculator = document.getElementById("calculator");
 const passwordModal = document.getElementById("passwordModal");
@@ -14,10 +13,8 @@ const coreOD = document.getElementById("coreOD");
 const coreLength = document.getElementById("coreLength");
 const extraInput = document.getElementById("extra");
 
-// ---------- ADMIN CONFIG ----------
-const ADMIN_PASSWORD = "admin123";
+const ADMIN_PASSWORD = "electro123";
 
-// ---------- DATABASE ----------
 const defaultData = [
   { swg:22, thickness:0.711, ohm:2.760, minW:1300, maxW:1599 },
   { swg:23, thickness:0.610, ohm:3.728, minW:1200, maxW:1299 },
@@ -47,7 +44,6 @@ const defaultData = [
 
 let nichromeData = JSON.parse(localStorage.getItem("nichromeDB")) || defaultData;
 
-// ---------- UI NAV ----------
 function openCalculator() {
   landing.classList.add("hidden");
   dbEditor.classList.add("hidden");
@@ -86,7 +82,6 @@ function backToLanding() {
   result.innerHTML = "";
 }
 
-// ---------- DB EDIT ----------
 function renderDB() {
   dbTable.innerHTML = `
     <tr>
@@ -123,7 +118,6 @@ function saveDatabase() {
   alert("✅ Database saved permanently");
 }
 
-// ---------- CALCULATION ----------
 function calculate() {
   const W = +wattage.value;
   const V = +voltage.value;
@@ -226,7 +220,6 @@ function calculate() {
 }
 
 
-// Allow Enter key in password field
 dbPassword.addEventListener("keypress", function(e) {
   if (e.key === "Enter") {
     checkPassword();
