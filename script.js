@@ -158,7 +158,8 @@ function calculate() {
   const extra = +extraInput.value || 0;
 
   if (!W || !V || !OD || !L) {
-    result.innerHTML = "<p style='color:red'>Fill all inputs</p>";
+    result.innerHTML =
+      "<p style='color:#ef4444;margin-top:20px'>❌ Fill all required inputs</p>";
     return;
   }
 
@@ -169,44 +170,93 @@ function calculate() {
     w => W >= w.minw && W <= w.maxw
   );
 
-  let rows = [];
-  let found = false;
+  if (startIndex === -1) {
+    result.innerHTML =
+      "<p style='color:#ef4444;margin-top:20px'>❌ No wire found for this wattage range</p>";
+    return;
+  }
+
+  let results = [];
   let primaryIndex = -1;
+  let found = false;
 
   for (let i = startIndex; i < wireData.length; i++) {
     const w = wireData[i];
 
     const wireLenM = finalR / w.ohm;
-    const turns = (wireLenM * 1000) / (Math.PI * OD);
+    const wireLenMM = wireLenM * 1000;
+    const turns = wireLenMM / (Math.PI * OD);
     const pitch = L / turns;
-    const ideal = 2 * w.thickness;
+    const idealPitch = 2 * w.thickness;
 
+    // ✅ ACCEPTABLE PITCH LOGIC (AS YOU DEFINED)
     let pass = false;
-    if (w.swg <= 32) pass = pitch >= ideal * 0.98;
-    else pass = pitch >= ideal;
 
-    rows.push({ w, wireLenM, turns, pitch, ideal, pass });
+    if (w.swg >= 22 && w.swg <= 32) {
+      pass = pitch >= idealPitch * 0.98; // -2% allowed
+    } else if (w.swg >= 33 && w.swg <= 45) {
+      pass = pitch >= idealPitch;
+    }
 
+    results.push({
+      swg: w.swg,
+      thickness: w.thickness,
+      ohm: w.ohm,
+      wireLenM,
+      turns,
+      pitch,
+      idealPitch,
+      pass
+    });
+
+    // PRIMARY + ONE SECONDARY ONLY
     if (pass && !found) {
+      primaryIndex = results.length - 1;
       found = true;
-      primaryIndex = rows.length - 1;
-    } else if (found) break;
+    } else if (found) {
+      break;
+    }
   }
 
+  /* ---------- FULL DETAILED OUTPUT ---------- */
   result.innerHTML = `
-    <p><b>Final Resistance:</b> ${finalR.toFixed(2)} Ω</p>
-    <table>
-      <tr>
-        <th>SWG</th><th>Pitch</th><th>2×Thickness</th><th>Status</th>
-      </tr>
-      ${rows.map((r,i)=>`
-        <tr class="${i===primaryIndex?'primary':r.pass?'secondary':'fail'}">
-          <td>${r.w.swg}</td>
-          <td>${r.pitch.toFixed(3)}</td>
-          <td>${r.ideal.toFixed(3)}</td>
-          <td>${r.pass?'PASS':'FAIL'}</td>
+    <div style="margin-top:15px">
+      <b>Base Resistance:</b> ${baseR.toFixed(2)} Ω<br>
+      <b>Final Resistance (+${extra}%):</b> ${finalR.toFixed(2)} Ω
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <tr>
+          <th>SWG</th>
+          <th>Thickness (mm)</th>
+          <th>Ω / m</th>
+          <th>Wire Length (m)</th>
+          <th>Turns</th>
+          <th>Pitch (mm)</th>
+          <th>2 × Thickness</th>
+          <th>Status</th>
         </tr>
-      `).join("")}
-    </table>
+
+        ${results.map((r, i) => `
+          <tr class="${
+            i === primaryIndex
+              ? "primary"
+              : r.pass
+              ? "secondary"
+              : "fail"
+          }">
+            <td>${r.swg}</td>
+            <td>${r.thickness.toFixed(3)}</td>
+            <td>${r.ohm.toFixed(3)}</td>
+            <td>${r.wireLenM.toFixed(2)}</td>
+            <td>${r.turns.toFixed(0)}</td>
+            <td>${r.pitch.toFixed(3)}</td>
+            <td>${r.idealPitch.toFixed(3)}</td>
+            <td>${r.pass ? "✓ PASS" : "✗ FAIL"}</td>
+          </tr>
+        `).join("")}
+      </table>
+    </div>
   `;
 }
