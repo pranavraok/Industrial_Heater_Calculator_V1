@@ -1,10 +1,14 @@
+/* ------------------ GLOBAL STATE ------------------ */
+let activeMaterial = null;
+let activeTable = null;
+let wireData = [];
+
+/* ------------------ DOM ------------------ */
+const materialSelect = document.getElementById("materialSelect");
 const landing = document.getElementById("landing");
 const calculator = document.getElementById("calculator");
-const passwordModal = document.getElementById("passwordModal");
 const dbEditor = document.getElementById("dbEditor");
-const dbPassword = document.getElementById("dbPassword");
-const passError = document.getElementById("passError");
-const dbTable = document.getElementById("dbTable");
+const passwordModal = document.getElementById("passwordModal");
 const result = document.getElementById("result");
 
 const wattage = document.getElementById("wattage");
@@ -13,53 +17,80 @@ const coreOD = document.getElementById("coreOD");
 const coreLength = document.getElementById("coreLength");
 const extraInput = document.getElementById("extra");
 
+const dbPassword = document.getElementById("dbPassword");
+const passError = document.getElementById("passError");
+const dbTable = document.getElementById("dbTable");
+const dbTitle = document.getElementById("dbTitle");
+const materialLabel = document.getElementById("materialLabel");
+
 const saveModal = document.getElementById("saveModal");
 const saveTitle = document.getElementById("saveTitle");
 const saveMessage = document.getElementById("saveMessage");
 
+/* ------------------ AUTH ------------------ */
 const ADMIN_PASSWORD = "electro123";
 
+/* ------------------ SUPABASE ------------------ */
 const supabaseClient = window.supabase.createClient(
   "https://zgwpjwywbnhrwzlucvwe.supabase.co",
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpnd3Bqd3l3Ym5ocnd6bHVjdndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczNzEyODAsImV4cCI6MjA4Mjk0NzI4MH0.jNlLdo4lAoVVNauhAqY0v_8L_sY_XVdlnsV230BaoAY"
 );
 
-let nichromeData = [];
+/* ------------------ MATERIAL SELECTION ------------------ */
+function selectMaterial(type) {
+  activeMaterial = type;
+  activeTable = type === "nichrome" ? "nichrome_wires" : "kanthal_d_wires";
 
+  materialLabel.innerText =
+    type === "nichrome" ? "Material: Nichrome" : "Material: Kanthal D";
+
+  materialSelect.classList.add("hidden");
+  landing.classList.remove("hidden");
+
+  loadDatabase();
+}
+
+function backToMaterial() {
+  landing.classList.add("hidden");
+  materialSelect.classList.remove("hidden");
+}
+
+/* ------------------ DATABASE LOAD ------------------ */
 async function loadDatabase() {
   const { data, error } = await supabaseClient
-    .from("nichrome_wires")
+    .from(activeTable)
     .select("*")
     .order("swg");
 
   if (error) {
-    alert("❌ Failed to load wire database");
+    alert("Failed to load database");
     console.error(error);
     return;
   }
-
-  nichromeData = data;
+  wireData = data;
 }
 
-loadDatabase();
-
+/* ------------------ NAV ------------------ */
 function openCalculator() {
   landing.classList.add("hidden");
-  dbEditor.classList.add("hidden");
   calculator.classList.remove("hidden");
   result.innerHTML = "";
 }
 
+function backToLanding() {
+  calculator.classList.add("hidden");
+  dbEditor.classList.add("hidden");
+  landing.classList.remove("hidden");
+}
+
+/* ------------------ PASSWORD ------------------ */
 function openPassword() {
-  passError.textContent = "";
-  dbPassword.value = "";
   passwordModal.classList.remove("hidden");
 }
 
 function closePassword() {
   passwordModal.classList.add("hidden");
-  dbPassword.value = "";
-  passError.textContent = "";
+  passError.innerText = "";
 }
 
 function checkPassword() {
@@ -67,43 +98,24 @@ function checkPassword() {
     passwordModal.classList.add("hidden");
     renderDB();
     landing.classList.add("hidden");
-    calculator.classList.add("hidden");
     dbEditor.classList.remove("hidden");
   } else {
-    passError.textContent = "❌ Wrong password";
+    passError.innerText = "❌ Wrong password";
   }
 }
 
-function backToLanding() {
-  calculator.classList.add("hidden");
-  dbEditor.classList.add("hidden");
-  landing.classList.remove("hidden");
-  result.innerHTML = "";
-}
-
-function openSaveModal(title, message) {
-  saveTitle.innerText = title;
-  saveMessage.innerText = message;
-  saveModal.classList.remove("hidden");
-}
-
-function closeSaveModal() {
-  saveModal.classList.add("hidden");
-}
-
-
-// ---------- RENDER DB ----------
+/* ------------------ DB EDITOR ------------------ */
 function renderDB() {
+  dbTitle.innerText =
+    activeMaterial === "nichrome"
+      ? "Edit Nichrome Database"
+      : "Edit Kanthal D Database";
+
   dbTable.innerHTML = `
     <tr>
-      <th>ID</th>
-      <th>SWG</th>
-      <th>Thickness</th>
-      <th>Ω/m</th>
-      <th>Min W</th>
-      <th>Max W</th>
+      <th>ID</th><th>SWG</th><th>Thickness</th><th>Ω/m</th><th>Min W</th><th>Max W</th>
     </tr>
-    ${nichromeData.map(r => `
+    ${wireData.map(r => `
       <tr data-id="${r.id}">
         <td>${r.id}</td>
         <td contenteditable>${r.swg}</td>
@@ -117,53 +129,27 @@ function renderDB() {
 }
 
 async function saveDatabase() {
-  const saveBtn = document.getElementById("saveBtn");
-  saveBtn.disabled = true;
-  saveBtn.innerText = "Saving...";
-
   const rows = [...dbTable.rows].slice(1);
-
-  try {
-    for (const row of rows) {
-      const id = row.dataset.id;
-
-      const updateObj = {
+  for (const row of rows) {
+    await supabaseClient
+      .from(activeTable)
+      .update({
         swg: +row.cells[1].innerText,
         thickness: +row.cells[2].innerText,
         ohm: +row.cells[3].innerText,
         minw: +row.cells[4].innerText,
         maxw: +row.cells[5].innerText
-      };
-
-      const { error } = await supabaseClient
-        .from("nichrome_wires")
-        .update(updateObj)
-        .eq("id", id);
-
-      if (error) throw error;
-    }
-
-    await loadDatabase();
-
-    openSaveModal(
-      "✅ Saved Successfully",
-      "Nichrome database has been updated successfully."
-    );
-
-  } catch (err) {
-    console.error(err);
-
-    openSaveModal(
-      "❌ Save Failed",
-      "Something went wrong while saving. Please try again."
-    );
-
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.innerText = "Save Changes";
+      })
+      .eq("id", row.dataset.id);
   }
+
+  await loadDatabase();
+  saveTitle.innerText = "Saved";
+  saveMessage.innerText = "Database updated successfully.";
+  saveModal.classList.remove("hidden");
 }
 
+/* ------------------ CALCULATION ------------------ */
 function calculate() {
   const W = +wattage.value;
   const V = +voltage.value;
@@ -172,107 +158,55 @@ function calculate() {
   const extra = +extraInput.value || 0;
 
   if (!W || !V || !OD || !L) {
-    result.innerHTML =
-      "<p style='color:#ef4444;margin-top:20px'>❌ Fill all required inputs</p>";
+    result.innerHTML = "<p style='color:red'>Fill all inputs</p>";
     return;
   }
 
   const baseR = (V * V) / W;
   const finalR = baseR * (1 + extra / 100);
 
-  const startIndex = nichromeData.findIndex(
+  const startIndex = wireData.findIndex(
     w => W >= w.minw && W <= w.maxw
   );
 
-  if (startIndex === -1) {
-    result.innerHTML =
-      "<p style='color:#ef4444;margin-top:20px'>❌ No wire found for this wattage range</p>";
-    return;
-  }
-
-  let results = [];
-  let primaryIndex = -1;
+  let rows = [];
   let found = false;
+  let primaryIndex = -1;
 
-  for (let i = startIndex; i < nichromeData.length; i++) {
-    const w = nichromeData[i];
+  for (let i = startIndex; i < wireData.length; i++) {
+    const w = wireData[i];
 
     const wireLenM = finalR / w.ohm;
-    const wireLenMM = wireLenM * 1000;
-    const turns = wireLenMM / (Math.PI * OD);
+    const turns = (wireLenM * 1000) / (Math.PI * OD);
     const pitch = L / turns;
-    const idealPitch = 2 * w.thickness;
+    const ideal = 2 * w.thickness;
 
-    // 🔑 ACCEPTABLE PITCH LOGIC (FINAL)
     let pass = false;
+    if (w.swg <= 32) pass = pitch >= ideal * 0.98;
+    else pass = pitch >= ideal;
 
-    if (w.swg >= 22 && w.swg <= 32) {
-      const minPitch = idealPitch * 0.98; // -2% allowed
-      pass = pitch >= minPitch;
-    } else if (w.swg >= 33 && w.swg <= 45) {
-      pass = pitch >= idealPitch;
-    }
+    rows.push({ w, wireLenM, turns, pitch, ideal, pass });
 
-    results.push({
-      swg: w.swg,
-      thickness: w.thickness,
-      ohm: w.ohm,
-      wireLenM,
-      turns,
-      pitch,
-      idealPitch,
-      pass
-    });
-
-    // PRIMARY
     if (pass && !found) {
-      primaryIndex = results.length - 1;
       found = true;
-    }
-    // SECONDARY (one more only)
-    else if (found) break;
+      primaryIndex = rows.length - 1;
+    } else if (found) break;
   }
 
   result.innerHTML = `
-    <div style="margin-top:15px">
-      <b>Base Resistance:</b> ${baseR.toFixed(2)} Ω<br>
-      <b>Final Resistance (+${extra}%):</b> ${finalR.toFixed(2)} Ω
-    </div>
-
-    <div class="table-wrapper">
-      <table>
-        <tr>
-          <th>SWG</th>
-          <th>Thickness (mm)</th>
-          <th>Ω / m</th>
-          <th>Wire Length (m)</th>
-          <th>Turns</th>
-          <th>Pitch (mm)</th>
-          <th>2 × Thickness</th>
-          <th>Status</th>
+    <p><b>Final Resistance:</b> ${finalR.toFixed(2)} Ω</p>
+    <table>
+      <tr>
+        <th>SWG</th><th>Pitch</th><th>2×Thickness</th><th>Status</th>
+      </tr>
+      ${rows.map((r,i)=>`
+        <tr class="${i===primaryIndex?'primary':r.pass?'secondary':'fail'}">
+          <td>${r.w.swg}</td>
+          <td>${r.pitch.toFixed(3)}</td>
+          <td>${r.ideal.toFixed(3)}</td>
+          <td>${r.pass?'PASS':'FAIL'}</td>
         </tr>
-
-        ${results.map((r, i) => `
-          <tr class="${
-            i === primaryIndex ? "primary" : r.pass ? "secondary" : "fail"
-          }">
-            <td>${r.swg}</td>
-            <td>${r.thickness}</td>
-            <td>${r.ohm}</td>
-            <td>${r.wireLenM.toFixed(2)}</td>
-            <td>${r.turns.toFixed(0)}</td>
-            <td>${r.pitch.toFixed(3)}</td>
-            <td>${r.idealPitch.toFixed(3)}</td>
-            <td>${r.pass ? "✓ PASS" : "✗ FAIL"}</td>
-          </tr>
-        `).join("")}
-      </table>
-    </div>
+      `).join("")}
+    </table>
   `;
 }
-
-dbPassword.addEventListener("keypress", function(e) {
-  if (e.key === "Enter") {
-    checkPassword();
-  }
-});
