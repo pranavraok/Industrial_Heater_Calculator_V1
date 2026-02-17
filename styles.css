@@ -90,13 +90,20 @@ label {
   margin-bottom: 6px;
 }
 
-input {
+input,
+select {
   padding: 10px 12px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--card);
   color: var(--text);
   border-radius: 8px;
   width: 100%;
+}
+
+select option {
+  background: var(--card);
+  color: var(--text);
+  padding: 10px;
 }
 
 /* ---------- ACTION BUTTON ROW ---------- */

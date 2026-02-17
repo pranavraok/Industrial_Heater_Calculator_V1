@@ -19,33 +19,49 @@
 
 <!-- ACTION SELECTION -->
 <div id="landing" class="container hidden">
-
-  <!-- HEADER BAR -->
   <div class="material-bar">
     <span id="materialLabel"></span>
     <button class="back-btn" onclick="backToMaterial()">Back</button>
   </div>
 
-  <!-- ACTION BUTTONS -->
   <div class="landing">
     <button onclick="openCalculator()">Calculate Value</button>
     <button onclick="openPassword()">Edit Database</button>
   </div>
-
 </div>
-
 
 <!-- CALCULATOR -->
 <div id="calculator" class="container hidden">
   <div class="form">
-    <div><label>Wattage (W)</label><input id="wattage" type="number"></div>
-    <div><label>Voltage (V)</label><input id="voltage" type="number"></div>
-    <div><label>Core OD (mm)</label><input id="coreOD" type="number"></div>
-    <div><label>Core Length (mm)</label><input id="coreLength" type="number"></div>
-    <div><label>Extra Resistance (%)</label><input id="extra" type="number" value="0"></div>
+    <div>
+      <label>Wattage (W)</label>
+      <input id="wattage" type="number">
+    </div>
+
+    <div>
+      <label>Voltage (V)</label>
+      <input id="voltage" type="number">
+    </div>
+
+    <div>
+      <label>Pipe OD (mm)</label>
+      <select id="coreOD"></select>
+    </div>
+
+    <div>
+      <label>Heater Length (mm)</label>
+      <input id="coreLength" type="number">
+    </div>
+
+    <div>
+      <label>Extra Resistance (%)</label>
+      <input id="extra" type="number" value="0">
+    </div>
   </div>
+
   <button onclick="calculate()">Calculate</button>
   <button onclick="backToLanding()" style="background:#64748b;margin-left:10px">Back</button>
+
   <div id="result"></div>
 </div>
 
