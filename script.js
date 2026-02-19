@@ -6,7 +6,7 @@ let activeMaterial = null;
 let activeTable = null;
 let wireData = [];
 
-const ADMIN_PASSWORD = "change-me";
+const ADMIN_PASSWORD = "electro123@";
 
 /* =========================================================
    DOM REFERENCES
@@ -17,6 +17,7 @@ const landing = document.getElementById("landing");
 const calculator = document.getElementById("calculator");
 const dbEditor = document.getElementById("dbEditor");
 const passwordModal = document.getElementById("passwordModal");
+const saveModal = document.getElementById("saveModal");
 const result = document.getElementById("result");
 
 const wattage = document.getElementById("wattage");
@@ -115,6 +116,7 @@ function openCalculator() {
 
 function backToLanding() {
   calculator.classList.add("hidden");
+  dbEditor.classList.add("hidden");
   landing.classList.remove("hidden");
 }
 
@@ -415,4 +417,124 @@ function calculate() {
       </table>
     </div>
   `;
+}
+
+/* =========================================================
+   PASSWORD MODAL FUNCTIONS
+========================================================= */
+
+function openPassword() {
+  passwordModal.classList.remove("hidden");
+  document.getElementById("dbPassword").value = "";
+  document.getElementById("passError").innerText = "";
+}
+
+function closePassword() {
+  passwordModal.classList.add("hidden");
+}
+
+function checkPassword() {
+  const pass = document.getElementById("dbPassword").value;
+  const passError = document.getElementById("passError");
+
+  if (pass === ADMIN_PASSWORD) {
+    closePassword();
+    openDatabase();
+  } else {
+    passError.innerText = "❌ Incorrect password";
+    passError.style.color = "#ef4444";
+  }
+}
+
+/* =========================================================
+   DATABASE EDITOR FUNCTIONS
+========================================================= */
+
+function openDatabase() {
+  landing.classList.add("hidden");
+  dbEditor.classList.remove("hidden");
+  populateDBTable();
+}
+
+function populateDBTable() {
+  const table = document.getElementById("dbTable");
+  
+  if (!wireData.length) {
+    table.innerHTML = "<tr><td>No data loaded</td></tr>";
+    return;
+  }
+
+  let html = `
+    <thead>
+      <tr>
+        <th>SWG</th>
+        <th>Thickness (mm)</th>
+        <th>Ω / m</th>
+        <th>Min Wattage</th>
+        <th>Max Wattage</th>
+      </tr>
+    </thead>
+    <tbody>
+  `;
+
+  wireData.forEach((wire, idx) => {
+    html += `
+      <tr>
+        <td><input type="number" value="${wire.swg}" data-idx="${idx}" data-field="swg"></td>
+        <td><input type="number" step="0.001" value="${wire.thickness}" data-idx="${idx}" data-field="thickness"></td>
+        <td><input type="number" step="0.001" value="${wire.ohm}" data-idx="${idx}" data-field="ohm"></td>
+        <td><input type="number" value="${wire.minw}" data-idx="${idx}" data-field="minw"></td>
+        <td><input type="number" value="${wire.maxw}" data-idx="${idx}" data-field="maxw"></td>
+      </tr>
+    `;
+  });
+
+  html += `</tbody>`;
+  table.innerHTML = html;
+
+  // Add event listeners to update wireData when inputs change
+  table.querySelectorAll("input").forEach(input => {
+    input.addEventListener("input", (e) => {
+      const idx = parseInt(e.target.dataset.idx);
+      const field = e.target.dataset.field;
+      const value = parseFloat(e.target.value) || 0;
+      wireData[idx][field] = value;
+    });
+  });
+}
+
+async function saveDatabase() {
+  const saveBtn = document.getElementById("saveBtn");
+  saveBtn.disabled = true;
+  saveBtn.innerText = "Saving...";
+
+  try {
+    const { error } = await supabaseClient
+      .from(activeTable)
+      .upsert(wireData, { onConflict: "swg" });
+
+    if (error) throw error;
+
+    showSaveModal("✅ Success", "Database saved successfully!");
+  } catch (err) {
+    console.error(err);
+    showSaveModal("❌ Error", "Failed to save database: " + err.message);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.innerText = "Save Changes";
+  }
+}
+
+/* =========================================================
+   SAVE STATUS MODAL
+========================================================= */
+
+function showSaveModal(title, message) {
+  document.getElementById("saveTitle").innerText = title;
+  document.getElementById("saveMessage").innerText = message;
+  document.getElementById("saveModal").classList.remove("hidden");
+}
+
+function closeSaveModal() {
+  document.getElementById("saveModal").classList.add("hidden");
 }

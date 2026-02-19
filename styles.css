@@ -166,6 +166,18 @@ tr.fail {
   opacity: 0.45;
 }
 
+/* ---------- DATABASE TABLE INPUTS ---------- */
+#dbTable input {
+  width: 100%;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 13px;
+}
+
+#dbTable td {
+  padding: 8px 4px;
+}
+
 /* ---------- MODAL ---------- */
 .modal {
   position: fixed;
