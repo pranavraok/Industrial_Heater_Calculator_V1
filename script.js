@@ -173,19 +173,28 @@ function autoCalculateFields() {
   const pipeThickness = Number(pipeThicknessInput.value);
 
   // Auto-calculate Pipe OD (if enabled and we have required data)
-  if (autoPipeODCheckbox.checked && heaterOD && pipeThickness) {
-    const pipeOD = heaterOD + (2 * pipeThickness);
+  if (autoPipeODCheckbox.checked && heaterOD) {
+    let increment;
+    
+    // Rule based on Heater OD
+    if (heaterOD <= 10) {
+      increment = 1.5;
+    } else if (heaterOD <= 15) {
+      increment = 2.0;
+    } else if (heaterOD <= 25) {
+      increment = 2.5;
+    } else {
+      increment = 3.0;
+    }
+    
+    const pipeOD = heaterOD + increment;
     pipeODInput.value = pipeOD.toFixed(2);
   }
 
   // Get current pipe OD (auto or manual)
   const pipeOD = Number(pipeODInput.value);
 
-  // Always auto-calculate Core OD (if we have required data)
-  if (pipeOD && pipeThickness) {
-    const coreOD = pipeOD - (2 * pipeThickness);
-    coreODInput.value = coreOD.toFixed(2);
-  }
+  // Core OD is now manually entered (no auto-calculation)
 }
 
 /* =========================================================
@@ -232,6 +241,14 @@ function calculate() {
     return;
   }
 
+  const coreOD = Number(coreODInput.value);
+  
+  if (!coreOD) {
+    result.innerHTML =
+      "<p style='color:#ef4444'>❌ Please enter Core OD</p>";
+    return;
+  }
+
   /* =====================================================
      STEP 1: WATT DENSITY (USING HEATER OD + HEATER LENGTH)
   ===================================================== */
@@ -266,26 +283,14 @@ function calculate() {
   }
 
   /* =====================================================
-     STEP 4: GET CORE OD (ALREADY AUTO-CALCULATED)
-  ===================================================== */
-
-  const coreOD = Number(coreODInput.value);
-  
-  if (!coreOD) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ Core OD calculation failed. Check pipe OD and thickness.</p>";
-    return;
-  }
-
-  /* =====================================================
-     STEP 5: RESISTANCE CALCULATION
+     STEP 4: RESISTANCE CALCULATION
   ===================================================== */
 
   const baseResistance = (V * V) / W;
   const finalResistance = baseResistance * (1 + extra / 100);
 
   /* =====================================================
-     STEP 6: FIND STARTING GAUGE FROM WATTAGE RANGE
+     STEP 5: FIND STARTING GAUGE FROM WATTAGE RANGE
   ===================================================== */
 
   const startIndex = wireData.findIndex(
@@ -303,7 +308,7 @@ function calculate() {
   let found = false;
 
   /* =====================================================
-     STEP 7: ITERATE GAUGE LOGIC
+     STEP 6: ITERATE GAUGE LOGIC
   ===================================================== */
 
   for (let i = startIndex; i < wireData.length; i++) {
@@ -371,7 +376,8 @@ function calculate() {
       <b>Final Resistance (+${extra}%):</b> ${finalResistance.toFixed(2)} Ω<br><br>
 
       <i style="color:var(--muted);font-size:12px">
-        Note: Turns = Wire Length ÷ (π × Core OD) | Pitch = Core Length ÷ Turns
+        📐 Pipe OD Auto Rule: ≤10mm → +1.5mm | ≤15mm → +2mm | ≤25mm → +2.5mm | >25mm → +3mm<br>
+        📊 Turns = Wire Length ÷ (π × Core OD) | Pitch = Core Length ÷ Turns
       </i>
     </div>
 
