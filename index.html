@@ -19,6 +19,7 @@
 
 <!-- ACTION SELECTION -->
 <div id="landing" class="container hidden">
+
   <div class="material-bar">
     <span id="materialLabel"></span>
     <button class="back-btn" onclick="backToMaterial()">Back</button>
@@ -28,44 +29,83 @@
     <button onclick="openCalculator()">Calculate Value</button>
     <button onclick="openPassword()">Edit Database</button>
   </div>
+
 </div>
 
 <!-- CALCULATOR -->
 <div id="calculator" class="container hidden">
+
+  <div class="material-bar">
+    <span id="materialLabelCalc"></span>
+    <button class="back-btn" onclick="backToLanding()">Back</button>
+  </div>
+
   <div class="form">
+
     <div>
       <label>Wattage (W)</label>
-      <input id="wattage" type="number">
+      <input id="wattage" type="number" placeholder="Enter wattage">
     </div>
 
     <div>
       <label>Voltage (V)</label>
-      <input id="voltage" type="number">
+      <input id="voltage" type="number" placeholder="Enter voltage">
     </div>
 
     <div>
-      <label>Pipe OD (mm)</label>
-      <select id="coreOD"></select>
+      <label>Heater OD (mm)</label>
+      <input id="heaterOD" type="number" placeholder="Enter heater diameter">
     </div>
 
     <div>
       <label>Heater Length (mm)</label>
-      <input id="coreLength" type="number">
+      <input id="heaterLength" type="number" placeholder="Total heater length">
+    </div>
+
+    <div>
+      <label>Core Length (mm)</label>
+      <input id="coreLength" type="number" placeholder="Winding length (excluding cold zones)">
+    </div>
+
+    <div>
+      <label>Pipe Thickness (mm)</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="pipeThickness" type="number" step="0.1" placeholder="Auto">
+        <label style="margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap">
+          <input type="checkbox" id="autoThickness" checked onchange="toggleAutoThickness()"> Auto
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <label>Pipe OD (mm)</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="pipeOD" type="number" step="0.1" placeholder="Auto">
+        <label style="margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap">
+          <input type="checkbox" id="autoPipeOD" checked onchange="toggleAutoPipeOD()"> Auto
+        </label>
+      </div>
+    </div>
+
+    <div>
+      <label>Core OD (mm)</label>
+      <input id="coreOD" type="number" placeholder="Auto-calculated" readonly style="background:#1e293b">
     </div>
 
     <div>
       <label>Extra Resistance (%)</label>
       <input id="extra" type="number" value="0">
     </div>
+
   </div>
 
   <button onclick="calculate()">Calculate</button>
-  <button onclick="backToLanding()" style="background:#64748b;margin-left:10px">Back</button>
 
   <div id="result"></div>
+
 </div>
 
-<!-- PASSWORD -->
+<!-- PASSWORD MODAL -->
 <div id="passwordModal" class="modal hidden">
   <div class="modal-box">
     <h3>Enter Admin Password</h3>
@@ -76,7 +116,7 @@
   </div>
 </div>
 
-<!-- SAVE STATUS -->
+<!-- SAVE STATUS MODAL -->
 <div id="saveModal" class="modal hidden">
   <div class="modal-box">
     <h3 id="saveTitle">Status</h3>
@@ -85,17 +125,24 @@
   </div>
 </div>
 
-<!-- DB EDITOR -->
+<!-- DATABASE EDITOR -->
 <div id="dbEditor" class="container hidden">
-  <h3 id="dbTitle">Edit Database</h3>
+
+  <div class="material-bar">
+    <h3 id="dbTitle">Edit Database</h3>
+    <button class="back-btn" onclick="backToLanding()">Back</button>
+  </div>
+
   <div class="table-wrapper">
     <table id="dbTable"></table>
   </div>
+
   <button id="saveBtn" onclick="saveDatabase()">Save Changes</button>
-  <button onclick="backToLanding()" style="background:#64748b;margin-left:10px">Back</button>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="script.js"></script>
+
 </body>
 </html>
