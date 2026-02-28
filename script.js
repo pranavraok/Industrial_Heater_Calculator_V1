@@ -5,6 +5,7 @@
 let activeMaterial = null;
 let activeTable = null;
 let wireData = [];
+let coreODOverridden = false;
 
 const ADMIN_PASSWORD = "electro123@";
 
@@ -32,6 +33,8 @@ const coreODInput = document.getElementById("coreOD");
 
 const autoThicknessCheckbox = document.getElementById("autoThickness");
 const autoPipeODCheckbox = document.getElementById("autoPipeOD");
+const autoCoreODCheckbox = document.getElementById("autoCoreOD");
+const coreODStatusEl = document.getElementById("coreODStatus");
 
 const extraInput = document.getElementById("extra");
 
@@ -144,6 +147,37 @@ function toggleAutoPipeOD() {
   }
 }
 
+function toggleAutoCoreOD() {
+  const isAuto = autoCoreODCheckbox.checked;
+  if (isAuto) {
+    coreODInput.value = '';
+    coreODInput.placeholder = 'Auto';
+    coreODOverridden = false;
+    coreODStatusEl.textContent = '';
+    autoCalculateFields();
+  } else {
+    coreODOverridden = true;
+    coreODStatusEl.textContent = 'Manual Override Active';
+    coreODStatusEl.style.color = '#f59e0b';
+  }
+}
+
+/* =========================================================
+   INSULATION THICKNESS RULE  (based on watt density)
+========================================================= */
+
+/**
+ * Returns insulation thickness in mm:
+ *   wattDensity >= 9  → 2.0 mm
+ *   wattDensity <  8  → 1.5 mm
+ *   8 ≤ wattDensity < 9 → 1.7 mm (default mid-range)
+ */
+function getInsulationThickness(wattDensity) {
+  if (wattDensity >= 9) return 2.0;
+  if (wattDensity < 8)  return 1.5;
+  return 1.7;
+}
+
 /* =========================================================
    AUTO-CALCULATE FIELDS IN REAL-TIME
 ========================================================= */
@@ -155,20 +189,16 @@ function autoCalculateFields() {
   const heaterOD = Number(heaterODInput.value);
   const heaterLength = Number(heaterLengthInput.value);
 
-  // Auto-calculate Pipe Thickness (if enabled and we have enough data)
-  if (autoThicknessCheckbox.checked && W && V && heaterOD && heaterLength) {
-    const heaterCircumference = Math.PI * heaterOD;
-    const surfaceAreaMM2 = heaterCircumference * heaterLength;
-    const surfaceAreaCM2 = surfaceAreaMM2 / 100;
-    const wattDensity = W / surfaceAreaCM2;
+  // Compute watt density once so it can be reused by all downstream rules
+  let wattDensity = 0;
+  if (W && heaterOD && heaterLength) {
+    const surfaceAreaCM2 = (Math.PI * heaterOD * heaterLength) / 100;
+    wattDensity = W / surfaceAreaCM2;
+  }
 
-    let pipeThickness;
-    if (wattDensity <= 9) {
-      pipeThickness = 0.8;
-    } else {
-      pipeThickness = 1.0;
-    }
-    pipeThicknessInput.value = pipeThickness;
+  // Auto-calculate Pipe Thickness (if enabled and we have enough data)
+  if (autoThicknessCheckbox.checked && wattDensity) {
+    pipeThicknessInput.value = wattDensity <= 9 ? 0.8 : 1.0;
   }
 
   // Get current pipe thickness (auto or manual)
@@ -193,10 +223,46 @@ function autoCalculateFields() {
     pipeODInput.value = pipeOD.toFixed(2);
   }
 
-  // Get current pipe OD (auto or manual)
-  const pipeOD = Number(pipeODInput.value);
+  // -------------------------------------------------------
+  // AUTO-CALCULATE CORE OD
+  // Formula: CoreOD = HeaterOD - (PipeThickness × 2)
+  //                           - (NichromeWireThickness × 2)
+  //                           - InsulationThickness
+  // -------------------------------------------------------
+  if (autoCoreODCheckbox.checked && wattDensity && heaterOD && pipeThickness) {
 
-  // Core OD is now manually entered (no auto-calculation)
+    const insulationThickness = getInsulationThickness(wattDensity);
+
+    // Estimate wire thickness from the first entry in the wattage range
+    let nichromeThickness = 0;
+    if (wireData.length && W) {
+      const startEntry = wireData.find(w => W >= w.minw && W <= w.maxw);
+      if (startEntry) nichromeThickness = startEntry.thickness;
+    }
+
+    if (nichromeThickness > 0) {
+      const calcCoreOD =
+        heaterOD
+        - (pipeThickness * 2)
+        - (nichromeThickness * 2)
+        - insulationThickness;
+
+      if (calcCoreOD <= 0) {
+        coreODInput.value = '';
+        coreODStatusEl.textContent =
+          '⚠ Invalid dimensions – check heater OD and thickness values';
+        coreODStatusEl.style.color = '#ef4444';
+      } else {
+        coreODInput.value = calcCoreOD.toFixed(2);
+        coreODStatusEl.textContent =
+          `Insulation: ${insulationThickness} mm`;
+        coreODStatusEl.style.color = '#22c55e';
+      }
+    } else {
+      // Wire database not yet loaded or wattage not in range
+      coreODStatusEl.textContent = '';
+    }
+  }
 }
 
 /* =========================================================
@@ -211,6 +277,17 @@ function setupAutoCalculation() {
   heaterLengthInput.addEventListener('input', autoCalculateFields);
   pipeThicknessInput.addEventListener('input', autoCalculateFields);
   pipeODInput.addEventListener('input', autoCalculateFields);
+
+  // Detect manual override on Core OD field
+  coreODInput.addEventListener('input', () => {
+    if (autoCoreODCheckbox.checked) {
+      // User typed into the field — switch to manual override
+      autoCoreODCheckbox.checked = false;
+      coreODOverridden = true;
+      coreODStatusEl.textContent = 'Manual Override Active';
+      coreODStatusEl.style.color = '#f59e0b';
+    }
+  });
 }
 
 // Initialize auto-calculation on page load
@@ -244,10 +321,16 @@ function calculate() {
   }
 
   const coreOD = Number(coreODInput.value);
-  
-  if (!coreOD) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ Please enter Core OD</p>";
+
+  if (!coreOD || coreOD <= 0) {
+    // Distinguish between auto-calc failure vs user left it empty
+    if (autoCoreODCheckbox && autoCoreODCheckbox.checked) {
+      result.innerHTML =
+        "<p style='color:#ef4444'>❌ Invalid dimensions – check heater OD and thickness values</p>";
+    } else {
+      result.innerHTML =
+        "<p style='color:#ef4444'>❌ Please enter Core OD (or enable Auto mode)</p>";
+    }
     return;
   }
 
@@ -259,6 +342,13 @@ function calculate() {
   const surfaceAreaMM2 = heaterCircumference * heaterLength; // mm²
   const surfaceAreaCM2 = surfaceAreaMM2 / 100; // convert to cm²
   const wattDensity = W / surfaceAreaCM2;
+
+  /* =====================================================
+     STEP 1b: INSULATION THICKNESS (from watt density rule)
+  ===================================================== */
+
+  const insulationThickness = getInsulationThickness(wattDensity);
+  const isCoreODAuto = autoCoreODCheckbox && autoCoreODCheckbox.checked;
 
   /* =====================================================
      STEP 2: GET PIPE THICKNESS (ALREADY AUTO-FILLED OR MANUAL)
@@ -369,7 +459,13 @@ function calculate() {
       <b>Core Length (Winding Area):</b> ${coreLength.toFixed(2)} mm<br>
       <b>Pipe Thickness:</b> ${pipeThickness.toFixed(2)} mm ${autoThicknessCheckbox.checked ? '(Auto)' : '(Manual)'}<br>
       <b>Pipe OD:</b> ${pipeOD.toFixed(2)} mm ${autoPipeODCheckbox.checked ? '(Auto)' : '(Manual)'}<br>
-      <b>Core OD (For Turns Circumference):</b> ${coreOD.toFixed(2)} mm<br><br>
+      <b>Insulation Thickness:</b> ${insulationThickness.toFixed(1)} mm
+        <i style="color:var(--muted);font-size:11px">(watt density rule: ≥9 W/cm²→2mm | &lt;8→1.5mm | 8–9→1.7mm)</i><br>
+      <b>Core OD (For Turns Circumference):</b> ${coreOD.toFixed(2)} mm
+        ${!isCoreODAuto
+          ? '<span style="background:#78350f;color:#fcd34d;font-size:10px;padding:1px 6px;border-radius:9px;margin-left:4px">Manual Override</span>'
+          : ''
+        }<br><br>
 
       <b>Surface Area:</b> ${surfaceAreaCM2.toFixed(2)} cm² <i style="color:var(--muted);font-size:11px">(using Heater Length)</i><br>
       <b>Watt Density:</b> ${wattDensity.toFixed(2)} W/cm²<br><br>

@@ -89,7 +89,13 @@
 
     <div>
       <label>Core OD (mm)</label>
-      <input id="coreOD" type="number" placeholder="Enter core diameter">
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="coreOD" type="number" step="0.1" placeholder="Auto">
+        <label style="margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap">
+          <input type="checkbox" id="autoCoreOD" checked onchange="toggleAutoCoreOD()"> Auto
+        </label>
+      </div>
+      <span id="coreODStatus" style="font-size:11px;color:var(--muted);margin-top:4px;display:block"></span>
     </div>
 
     <div>
