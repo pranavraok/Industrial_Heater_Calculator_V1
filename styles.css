@@ -328,3 +328,51 @@ tr.fail {
   color: #fcd34d;
 }
 
+/* ---------- CORE OD STATUS BLOCK ---------- */
+.core-od-status {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cs-row {
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.cs-key {
+  color: var(--muted);
+  white-space: nowrap;
+  min-width: 138px;
+  flex-shrink: 0;
+}
+
+.cs-val {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.cs-ok {
+  color: #22c55e;
+  font-weight: 600;
+}
+
+.cs-err {
+  color: #ef4444;
+}
+
+.cs-warn {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.cs-note {
+  color: var(--muted);
+  font-size: 11px;
+  padding-left: 6px;
+}
+

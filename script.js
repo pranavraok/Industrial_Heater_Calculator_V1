@@ -9,6 +9,39 @@ let coreODOverridden = false;
 
 const ADMIN_PASSWORD = "electro123@";
 
+/* Available standard core diameters (mm) – sorted ascending */
+const STANDARD_CORE_SIZES = [
+  3.8, 4.1, 4.5, 5, 5.8, 6, 6.5, 7, 7.5, 7.7,
+  8, 8.5, 9.2, 10, 10.5, 11, 12, 12.2, 13, 14,
+  15.5, 16, 18, 21.3
+];
+
+/* Stock pipe inventory – each entry is { od, thickness } in mm */
+const PIPE_INVENTORY = [
+  { od: 15.8, thickness: 0.8 },
+  { od: 15.5, thickness: 0.8 },
+  { od: 14.5, thickness: 1.0 },
+  { od: 14,   thickness: 1.0 },
+  { od: 13.5, thickness: 0.8 },
+  { od: 13.5, thickness: 1.0 },
+  { od: 13.5, thickness: 0.7 },
+  { od: 11,   thickness: 0.8 },
+  { od: 18.8, thickness: 0.8 },
+  { od: 18.5, thickness: 1.0 },
+  { od: 17.5, thickness: 1.0 },
+  { od: 17.5, thickness: 0.8 },
+  { od: 18,   thickness: 1.0 },
+  { od: 27,   thickness: 1.2 },
+  { od: 21.4, thickness: 1.0 },
+  { od: 20,   thickness: 1.0 },
+  { od: 18,   thickness: 0.8 },
+  { od: 14,   thickness: 0.8 },
+  { od: 15.5, thickness: 1.0 },
+  { od: 12.7, thickness: 0.6 },
+  { od: 9.5,  thickness: 0.6 },
+  { od: 10.5, thickness: 0.8 }
+];
+
 /* =========================================================
    DOM REFERENCES
 ========================================================= */
@@ -157,8 +190,7 @@ function toggleAutoCoreOD() {
     autoCalculateFields();
   } else {
     coreODOverridden = true;
-    coreODStatusEl.textContent = 'Manual Override Active';
-    coreODStatusEl.style.color = '#f59e0b';
+    coreODStatusEl.innerHTML = '<div class="cs-row cs-warn">⚠ Manual Override Active</div>';
   }
 }
 
@@ -176,6 +208,20 @@ function getInsulationThickness(wattDensity) {
   if (wattDensity >= 9) return 2.0;
   if (wattDensity < 8)  return 1.5;
   return 1.7;
+}
+
+/**
+ * From STANDARD_CORE_SIZES, returns the largest size that is
+ * less than or equal to `theoretical`.
+ * Returns null if no standard size fits.
+ */
+function selectStandardCoreOD(theoretical) {
+  let best = null;
+  for (const size of STANDARD_CORE_SIZES) {
+    if (size <= theoretical) best = size;
+    else break; // list is sorted – no point continuing
+  }
+  return best;
 }
 
 /* =========================================================
@@ -196,76 +242,95 @@ function autoCalculateFields() {
     wattDensity = W / surfaceAreaCM2;
   }
 
-  // Auto-calculate Pipe Thickness (if enabled and we have enough data)
-  if (autoThicknessCheckbox.checked && wattDensity) {
-    pipeThicknessInput.value = wattDensity <= 9 ? 0.8 : 1.0;
-  }
-
-  // Get current pipe thickness (auto or manual)
-  const pipeThickness = Number(pipeThicknessInput.value);
-
-  // Auto-calculate Pipe OD (if enabled and we have required data)
-  if (autoPipeODCheckbox.checked && heaterOD) {
-    let increment;
-    
-    // Rule based on Heater OD
-    if (heaterOD <= 10) {
-      increment = 1.5;
-    } else if (heaterOD <= 15) {
-      increment = 2.0;
-    } else if (heaterOD <= 25) {
-      increment = 2.5;
-    } else {
-      increment = 3.0;
-    }
-    
-    const pipeOD = heaterOD + increment;
-    pipeODInput.value = pipeOD.toFixed(2);
-  }
-
   // -------------------------------------------------------
-  // AUTO-CALCULATE CORE OD
-  // Confirmed geometry formula:
-  //   PipeID  = HeaterOD (= PipeOD) − (2 × PipeThickness)
-  //   CoreOD  = PipeID
-  //             − (2 × NichromeWireThickness)   [both sides]
-  //             − (2 × InsulationThickness)      [both sides]
+  // STOCK PIPE + CORE SELECTION (real-time preview)
+  //
+  // Case A – both Pipe OD and Pipe Thickness are AUTO:
+  //   Loop PIPE_INVENTORY; find first pipe whose geometry
+  //   yields a valid standard Core OD for the estimated SWG.
+  //
+  // Case B – Pipe values are MANUAL, only Core OD is AUTO:
+  //   Use entered pipe values; snap Core OD to standard list.
   // -------------------------------------------------------
-  if (autoCoreODCheckbox.checked && wattDensity && heaterOD && pipeThickness) {
+
+  const bothPipeAuto = autoPipeODCheckbox.checked && autoThicknessCheckbox.checked;
+
+  if (bothPipeAuto && autoCoreODCheckbox.checked && wattDensity && wireData.length && W) {
 
     const insulationThickness = getInsulationThickness(wattDensity);
+    const startEntry = wireData.find(w => W >= w.minw && W <= w.maxw);
 
-    // Estimate wire thickness from the first entry in the wattage range
-    let nichromeThickness = 0;
-    if (wireData.length && W) {
-      const startEntry = wireData.find(w => W >= w.minw && W <= w.maxw);
-      if (startEntry) nichromeThickness = startEntry.thickness;
-    }
+    if (startEntry) {
+      let pickedPipe = null;
+      let pickedCoreOD = null;
 
-    if (nichromeThickness > 0) {
-      // Requirement: Heater OD = Pipe OD (outer metal diameter)
-      const pipeIDPreview = heaterOD - (pipeThickness * 2);
+      for (const pipe of PIPE_INVENTORY) {
+        const pid = pipe.od - 2 * pipe.thickness;
+        if (pid <= 0) continue;
+        const theoretical = pid - 2 * startEntry.thickness - 2 * insulationThickness;
+        if (theoretical <= 0) continue;
+        const snapped = selectStandardCoreOD(theoretical);
+        if (snapped !== null) { pickedPipe = pipe; pickedCoreOD = snapped; break; }
+      }
 
-      // CoreOD = PipeID − (2 × WireThickness) − (2 × InsulationThickness)
-      const calcCoreOD =
-        pipeIDPreview
-        - (nichromeThickness * 2)
-        - (insulationThickness * 2);
-
-      if (calcCoreOD <= 0) {
-        coreODInput.value = '';
-        coreODStatusEl.textContent =
-          '⚠ Invalid geometry – check pipe thickness, insulation, and wire size';
-        coreODStatusEl.style.color = '#ef4444';
-      } else {
-        coreODInput.value = calcCoreOD.toFixed(2);
+      if (pickedPipe) {
+        const pipeIDPreview = pickedPipe.od - 2 * pickedPipe.thickness;
+        const theoretical   = pipeIDPreview - 2 * startEntry.thickness - 2 * insulationThickness;
+        pipeODInput.value        = pickedPipe.od;
+        pipeThicknessInput.value = pickedPipe.thickness;
+        coreODInput.value        = pickedCoreOD;
         coreODStatusEl.innerHTML =
-          `Pipe ID: ${pipeIDPreview.toFixed(2)} mm<br>Insulation: ${insulationThickness.toFixed(1)} mm × 2 sides`;
-        coreODStatusEl.style.color = '#22c55e';
+          `<div class="cs-row"><span class="cs-key">Pipe ID</span><span class="cs-val">${pipeIDPreview.toFixed(2)} mm</span></div>` +
+          `<div class="cs-row"><span class="cs-key">Theoretical Core OD</span><span class="cs-val">${theoretical.toFixed(2)} mm</span></div>` +
+          `<div class="cs-row"><span class="cs-key">Insulation</span><span class="cs-val">${insulationThickness.toFixed(1)} mm × 2 sides</span></div>` +
+          `<div class="cs-row cs-ok">✓ Stock pipe selected</div>`;
+      } else {
+        pipeODInput.value        = '';
+        pipeThicknessInput.value = '';
+        coreODInput.value        = '';
+        coreODStatusEl.innerHTML = '<div class="cs-row cs-err">⚠ No valid pipe + core combination found in stock</div>';
       }
     } else {
-      // Wire database not yet loaded or wattage not in range
       coreODStatusEl.textContent = '';
+    }
+
+  } else if (autoCoreODCheckbox.checked && wattDensity && wireData.length && W) {
+
+    // Case B: pipe values are manual – only Core OD auto
+    const pipeThicknessVal = Number(pipeThicknessInput.value);
+    const pipeODVal        = Number(pipeODInput.value) || heaterOD;
+
+    if (pipeThicknessVal > 0) {
+      const insulationThickness = getInsulationThickness(wattDensity);
+      const startEntry = wireData.find(w => W >= w.minw && W <= w.maxw);
+      const nichromeThickness = startEntry ? startEntry.thickness : 0;
+
+      if (nichromeThickness > 0) {
+        const pipeIDPreview     = pipeODVal - pipeThicknessVal * 2;
+        const theoreticalCoreOD = pipeIDPreview - nichromeThickness * 2 - insulationThickness * 2;
+
+        if (theoreticalCoreOD <= 0) {
+          coreODInput.value = '';
+          coreODStatusEl.innerHTML = '<div class="cs-row cs-err">⚠ Invalid geometry – check pipe thickness, insulation, and wire size</div>';
+        } else {
+          const standardCoreOD = selectStandardCoreOD(theoreticalCoreOD);
+          if (standardCoreOD === null) {
+            coreODInput.value = '';
+            coreODStatusEl.innerHTML =
+              `<div class="cs-row cs-err">⚠ No available core size fits this geometry</div>` +
+              `<div class="cs-row cs-note">Theoretical: ${theoreticalCoreOD.toFixed(2)} mm – smallest stock is 3.8 mm</div>`;
+          } else {
+            coreODInput.value = standardCoreOD;
+            coreODStatusEl.innerHTML =
+              `<div class="cs-row"><span class="cs-key">Pipe ID</span><span class="cs-val">${pipeIDPreview.toFixed(2)} mm</span></div>` +
+              `<div class="cs-row"><span class="cs-key">Theoretical Core OD</span><span class="cs-val">${theoreticalCoreOD.toFixed(2)} mm</span></div>` +
+              `<div class="cs-row"><span class="cs-key">Insulation</span><span class="cs-val">${insulationThickness.toFixed(1)} mm × 2 sides</span></div>` +
+              `<div class="cs-row cs-ok">✓ Standard size selected</div>`;
+          }
+        }
+      } else {
+        coreODStatusEl.textContent = '';
+      }
     }
   }
 }
@@ -289,8 +354,7 @@ function setupAutoCalculation() {
       // User typed into the field — switch to manual override
       autoCoreODCheckbox.checked = false;
       coreODOverridden = true;
-      coreODStatusEl.textContent = 'Manual Override Active';
-      coreODStatusEl.style.color = '#f59e0b';
+      coreODStatusEl.innerHTML = '<div class="cs-row cs-warn">⚠ Manual Override Active</div>';
     }
   });
 }
@@ -328,10 +392,9 @@ function calculate() {
   const coreOD = Number(coreODInput.value);
 
   if (!coreOD || coreOD <= 0) {
-    // Distinguish between auto-calc failure vs user left it empty
     if (autoCoreODCheckbox && autoCoreODCheckbox.checked) {
       result.innerHTML =
-        "<p style='color:#ef4444'>❌ Invalid dimensions – check heater OD and thickness values</p>";
+        "<p style='color:#ef4444'>❌ No valid stock pipe + core combination found – adjust inputs or check stock inventory</p>";
     } else {
       result.innerHTML =
         "<p style='color:#ef4444'>❌ Please enter Core OD (or enable Auto mode)</p>";
@@ -362,8 +425,9 @@ function calculate() {
   const pipeThickness = Number(pipeThicknessInput.value);
   
   if (!pipeThickness) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ Please enter pipe thickness or enable Auto mode</p>";
+    result.innerHTML = autoThicknessCheckbox.checked
+      ? "<p style='color:#ef4444'>❌ No valid stock pipe found – check inventory or adjust wattage</p>"
+      : "<p style='color:#ef4444'>❌ Please enter pipe thickness</p>";
     return;
   }
 
@@ -374,17 +438,18 @@ function calculate() {
   const pipeOD = Number(pipeODInput.value);
   
   if (!pipeOD) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ Please enter pipe OD or enable Auto mode</p>";
+    result.innerHTML = autoPipeODCheckbox.checked
+      ? "<p style='color:#ef4444'>❌ No valid stock pipe found – check inventory or adjust wattage</p>"
+      : "<p style='color:#ef4444'>❌ Please enter pipe OD</p>";
     return;
   }
 
   /* =====================================================
      STEP 3b: PIPE ID CALCULATION
   ===================================================== */
-  // Requirement: Heater OD = Pipe OD (outer metal diameter)
   // Pipe ID = Pipe OD − (2 × Pipe Thickness)
-  const pipeID = heaterOD - (2 * pipeThickness);
+  // In auto mode pipeOD comes from the stock inventory selection.
+  const pipeID = pipeOD - (2 * pipeThickness);
 
   /* =====================================================
      STEP 4: RESISTANCE CALCULATION
@@ -419,24 +484,50 @@ function calculate() {
 
     const w = wireData[i];
 
-    /* ---- PER-SWG EFFECTIVE CORE OD ────────────────────────────────────
-       Auto mode : recalculate using this SWG's actual wire thickness so
-                   the geometry is exact for each candidate gauge.
-                   CoreOD = PipeID − (2 × wire.thickness) − (2 × insulationThickness)
-       Manual mode: use the user-entered value unchanged.
+    /* ---- PER-SWG PIPE + CORE SELECTION ───────────────────────────────
+       Auto mode : loop PIPE_INVENTORY to find the first pipe that:
+                     (a) produces a theoretical CoreOD > 0
+                     (b) snaps to a standard core size
+                     (c) pitch validation passes for this SWG
+       Manual mode: use the user-entered pipe OD / Core OD unchanged.
     ─────────────────────────────────────────────────────────────────── */
     let effectiveCoreOD;
+    let selectedPipe = null;
     let invalidGeometry = false;
 
     if (isCoreODAuto) {
-      effectiveCoreOD = pipeID
-        - (2 * w.thickness)
-        - (2 * insulationThickness);
 
-      if (effectiveCoreOD <= 0) {
+      for (const pipe of PIPE_INVENTORY) {
+        const thisPipeID = pipe.od - 2 * pipe.thickness;
+        if (thisPipeID <= 0) continue;
+
+        const theoretical = thisPipeID - 2 * w.thickness - 2 * insulationThickness;
+        if (theoretical <= 0) continue;
+
+        const snapped = selectStandardCoreOD(theoretical);
+        if (snapped === null) continue;
+
+        // Pre-validate pitch with this candidate
+        const wlMM_   = (finalResistance / w.ohm) * 1000;
+        const turns_  = wlMM_ / (Math.PI * snapped);
+        const pitch_  = coreLength / turns_;
+        const ip_     = 2 * w.thickness;
+        let passes = false;
+        if (w.swg >= 22 && w.swg <= 32) passes = pitch_ >= ip_ * 0.98;
+        else if (w.swg >= 33 && w.swg <= 45) passes = pitch_ >= ip_;
+
+        if (passes) {
+          selectedPipe    = pipe;
+          effectiveCoreOD = snapped;
+          break;
+        }
+      }
+
+      if (selectedPipe === null) {
         invalidGeometry = true;
         effectiveCoreOD = 0;
       }
+
     } else {
       effectiveCoreOD = coreOD;
     }
@@ -452,10 +543,11 @@ function calculate() {
         pitch: 0,
         idealPitch: 2 * w.thickness,
         effectiveCoreOD: 0,
+        selectedPipe: null,
         pass: false,
         invalidGeometry: true
       });
-      if (!found) continue;  // try a thinner gauge – its CoreOD may be valid
+      if (!found) continue;  // try a thinner gauge – a different pipe may fit
       else break;
     }
 
@@ -487,6 +579,7 @@ function calculate() {
       pitch,
       idealPitch,
       effectiveCoreOD,
+      selectedPipe,
       pass,
       invalidGeometry: false
     });
@@ -502,7 +595,7 @@ function calculate() {
   /* ---- All evaluated gauges have invalid geometry → hard stop ---- */
   if (!found && results.length > 0 && results.every(r => r.invalidGeometry)) {
     result.innerHTML =
-      "<p style='color:#ef4444'>❌ Invalid geometry – check pipe thickness, insulation, and wire size</p>";
+      "<p style='color:#ef4444'>❌ No valid stock pipe + core combination found for this wattage and geometry</p>";
     return;
   }
 
@@ -510,10 +603,14 @@ function calculate() {
      FINAL OUTPUT
   ===================================================== */
 
-  // For the summary header, show the primary SWG's exact Core OD (auto) or the user value (manual)
-  const displayCoreOD = (isCoreODAuto && primaryIndex >= 0)
-    ? results[primaryIndex].effectiveCoreOD
-    : coreOD;
+  // Resolve display values for the summary
+  const primaryResult = primaryIndex >= 0 ? results[primaryIndex] : null;
+  const primaryPipe   = (isCoreODAuto && primaryResult) ? primaryResult.selectedPipe : null;
+
+  const displayPipeOD        = primaryPipe ? primaryPipe.od        : pipeOD;
+  const displayPipeThickness = primaryPipe ? primaryPipe.thickness : pipeThickness;
+  const displayPipeID        = displayPipeOD - 2 * displayPipeThickness;
+  const displayCoreOD        = (isCoreODAuto && primaryResult) ? primaryResult.effectiveCoreOD : coreOD;
 
   result.innerHTML = `
     <div style="margin-top:18px;display:flex;flex-direction:column;gap:18px;">
@@ -525,14 +622,21 @@ function calculate() {
         <div class="info-label">Material</div>
         <div class="info-value">${(activeMaterial || '–').toUpperCase()}</div>
 
-        <div class="info-label">Heater OD (= Pipe OD)</div>
-        <div class="info-value">${heaterOD.toFixed(2)} mm</div>
+        <div class="info-label">Heater OD</div>
+        <div class="info-value">${heaterOD.toFixed(2)} mm <span class="info-note">(watt density reference)</span></div>
 
-        <div class="info-label">Pipe Thickness</div>
-        <div class="info-value">${pipeThickness.toFixed(2)} mm <span class="info-tag">${autoThicknessCheckbox.checked ? 'Auto' : 'Manual'}</span></div>
+        <div class="info-label">Selected Pipe OD</div>
+        <div class="info-value">${displayPipeOD.toFixed(2)} mm
+          <span class="info-tag">${isCoreODAuto ? 'Stock' : 'Manual'}</span>
+        </div>
+
+        <div class="info-label">Pipe Wall Thickness</div>
+        <div class="info-value">${displayPipeThickness.toFixed(2)} mm
+          <span class="info-tag">${isCoreODAuto ? 'Stock' : (autoThicknessCheckbox.checked ? 'Auto' : 'Manual')}</span>
+        </div>
 
         <div class="info-label">Pipe ID</div>
-        <div class="info-value">${pipeID.toFixed(2)} mm <span class="info-note">= Heater OD − 2 × Pipe Thickness</span></div>
+        <div class="info-value">${displayPipeID.toFixed(2)} mm <span class="info-note">= Pipe OD − 2 × Wall Thickness</span></div>
 
         <div class="info-label">Heater Length (Total)</div>
         <div class="info-value">${heaterLength.toFixed(2)} mm</div>
@@ -540,15 +644,12 @@ function calculate() {
         <div class="info-label">Core Length (Winding Area)</div>
         <div class="info-value">${coreLength.toFixed(2)} mm</div>
 
-        <div class="info-label">Pipe OD (Shell)</div>
-        <div class="info-value">${pipeOD.toFixed(2)} mm <span class="info-tag">${autoPipeODCheckbox.checked ? 'Auto' : 'Manual'}</span></div>
-
         <div class="info-label">Insulation Thickness</div>
         <div class="info-value">${insulationThickness.toFixed(1)} mm × 2 sides <span class="info-note">≥9 W/cm²→2 mm | &lt;8→1.5 mm | 8–9→1.7 mm</span></div>
 
-        <div class="info-label">Core OD</div>
+        <div class="info-label">Core OD (Stock)</div>
         <div class="info-value">${displayCoreOD > 0 ? displayCoreOD.toFixed(2) + ' mm' : '–'}
-          ${!isCoreODAuto ? '<span class="info-tag info-tag--warn">Manual Override</span>' : ''}
+          ${!isCoreODAuto ? '<span class="info-tag info-tag--warn">Manual Override</span>' : '<span class="info-tag">Standard</span>'}
         </div>
       </div>
 
@@ -578,7 +679,7 @@ function calculate() {
           <th>Thickness (mm)</th>
           <th>Ω / m</th>
           <th>Wire Length (m)</th>
-          ${isCoreODAuto ? '<th>Core OD (mm)</th>' : ''}
+          ${isCoreODAuto ? '<th>Pipe OD (mm)</th><th>Core OD (mm)</th>' : ''}
           <th>Turns</th>
           <th>Pitch (mm)</th>
           <th>2 × Thickness</th>
@@ -597,11 +698,14 @@ function calculate() {
             <td>${r.thickness.toFixed(3)}</td>
             <td>${r.ohm.toFixed(3)}</td>
             <td>${r.invalidGeometry ? '–' : r.wireLengthMeters.toFixed(2)}</td>
-            ${isCoreODAuto ? `<td style="${r.invalidGeometry ? 'color:#ef4444;font-weight:bold' : ''}">${r.invalidGeometry ? '⚠ ≤0' : r.effectiveCoreOD.toFixed(2)}</td>` : ''}
+            ${isCoreODAuto ? `
+              <td style="${r.invalidGeometry ? 'color:#ef4444' : ''}">${r.invalidGeometry || !r.selectedPipe ? '⚠ –' : r.selectedPipe.od.toFixed(1) + ' / ' + r.selectedPipe.thickness.toFixed(1)}</td>
+              <td style="${r.invalidGeometry ? 'color:#ef4444;font-weight:bold' : ''}">${r.invalidGeometry ? '⚠ –' : r.effectiveCoreOD.toFixed(2)}</td>
+            ` : ''}
             <td>${r.invalidGeometry ? '–' : r.turns.toFixed(0)}</td>
             <td>${r.invalidGeometry ? '–' : r.pitch.toFixed(3)}</td>
             <td>${r.idealPitch.toFixed(3)}</td>
-            <td>${r.invalidGeometry ? '<span style="color:#ef4444">⚠ Invalid Geometry</span>' : r.pass ? "✓ PASS" : "✗ FAIL"}</td>
+            <td>${r.invalidGeometry ? '<span style="color:#ef4444">⚠ No Stock Fit</span>' : r.pass ? "✓ PASS" : "✗ FAIL"}</td>
           </tr>
         `).join("")}
       </table>
