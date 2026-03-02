@@ -225,9 +225,11 @@ function autoCalculateFields() {
 
   // -------------------------------------------------------
   // AUTO-CALCULATE CORE OD
-  // Formula: CoreOD = HeaterOD - (PipeThickness × 2)
-  //                           - (NichromeWireThickness × 2)
-  //                           - InsulationThickness
+  // Confirmed geometry formula:
+  //   PipeID  = HeaterOD (= PipeOD) − (2 × PipeThickness)
+  //   CoreOD  = PipeID
+  //             − (2 × NichromeWireThickness)   [both sides]
+  //             − (2 × InsulationThickness)      [both sides]
   // -------------------------------------------------------
   if (autoCoreODCheckbox.checked && wattDensity && heaterOD && pipeThickness) {
 
@@ -241,21 +243,24 @@ function autoCalculateFields() {
     }
 
     if (nichromeThickness > 0) {
+      // Requirement: Heater OD = Pipe OD (outer metal diameter)
+      const pipeIDPreview = heaterOD - (pipeThickness * 2);
+
+      // CoreOD = PipeID − (2 × WireThickness) − (2 × InsulationThickness)
       const calcCoreOD =
-        heaterOD
-        - (pipeThickness * 2)
+        pipeIDPreview
         - (nichromeThickness * 2)
-        - insulationThickness;
+        - (insulationThickness * 2);
 
       if (calcCoreOD <= 0) {
         coreODInput.value = '';
         coreODStatusEl.textContent =
-          '⚠ Invalid dimensions – check heater OD and thickness values';
+          '⚠ Invalid geometry – check pipe thickness, insulation, and wire size';
         coreODStatusEl.style.color = '#ef4444';
       } else {
         coreODInput.value = calcCoreOD.toFixed(2);
-        coreODStatusEl.textContent =
-          `Insulation: ${insulationThickness} mm`;
+        coreODStatusEl.innerHTML =
+          `Pipe ID: ${pipeIDPreview.toFixed(2)} mm<br>Insulation: ${insulationThickness.toFixed(1)} mm × 2 sides`;
         coreODStatusEl.style.color = '#22c55e';
       }
     } else {
@@ -375,6 +380,13 @@ function calculate() {
   }
 
   /* =====================================================
+     STEP 3b: PIPE ID CALCULATION
+  ===================================================== */
+  // Requirement: Heater OD = Pipe OD (outer metal diameter)
+  // Pipe ID = Pipe OD − (2 × Pipe Thickness)
+  const pipeID = heaterOD - (2 * pipeThickness);
+
+  /* =====================================================
      STEP 4: RESISTANCE CALCULATION
   ===================================================== */
 
@@ -407,11 +419,51 @@ function calculate() {
 
     const w = wireData[i];
 
+    /* ---- PER-SWG EFFECTIVE CORE OD ────────────────────────────────────
+       Auto mode : recalculate using this SWG's actual wire thickness so
+                   the geometry is exact for each candidate gauge.
+                   CoreOD = PipeID − (2 × wire.thickness) − (2 × insulationThickness)
+       Manual mode: use the user-entered value unchanged.
+    ─────────────────────────────────────────────────────────────────── */
+    let effectiveCoreOD;
+    let invalidGeometry = false;
+
+    if (isCoreODAuto) {
+      effectiveCoreOD = pipeID
+        - (2 * w.thickness)
+        - (2 * insulationThickness);
+
+      if (effectiveCoreOD <= 0) {
+        invalidGeometry = true;
+        effectiveCoreOD = 0;
+      }
+    } else {
+      effectiveCoreOD = coreOD;
+    }
+
+    /* ---- SAFETY VALIDATION: skip turns/pitch for invalid geometry ---- */
+    if (invalidGeometry) {
+      results.push({
+        swg: w.swg,
+        thickness: w.thickness,
+        ohm: w.ohm,
+        wireLengthMeters: 0,
+        turns: 0,
+        pitch: 0,
+        idealPitch: 2 * w.thickness,
+        effectiveCoreOD: 0,
+        pass: false,
+        invalidGeometry: true
+      });
+      if (!found) continue;  // try a thinner gauge – its CoreOD may be valid
+      else break;
+    }
+
     const wireLengthMeters = finalResistance / w.ohm;
     const wireLengthMM = wireLengthMeters * 1000;
 
-    /* -------- TURNS CALCULATION (USING CORE OD) -------- */
-    const circumferencePerTurn = Math.PI * coreOD;
+    /* -------- TURNS CALCULATION (USING EFFECTIVE CORE OD) -------- */
+    const circumferencePerTurn = Math.PI * effectiveCoreOD;
     const turns = wireLengthMM / circumferencePerTurn;
 
     /* -------- PITCH: SPACING BETWEEN TURNS (USING CORE LENGTH) -------- */
@@ -434,7 +486,9 @@ function calculate() {
       turns,
       pitch,
       idealPitch,
-      pass
+      effectiveCoreOD,
+      pass,
+      invalidGeometry: false
     });
 
     if (pass && !found) {
@@ -445,38 +499,76 @@ function calculate() {
     }
   }
 
+  /* ---- All evaluated gauges have invalid geometry → hard stop ---- */
+  if (!found && results.length > 0 && results.every(r => r.invalidGeometry)) {
+    result.innerHTML =
+      "<p style='color:#ef4444'>❌ Invalid geometry – check pipe thickness, insulation, and wire size</p>";
+    return;
+  }
+
   /* =====================================================
      FINAL OUTPUT
   ===================================================== */
 
+  // For the summary header, show the primary SWG's exact Core OD (auto) or the user value (manual)
+  const displayCoreOD = (isCoreODAuto && primaryIndex >= 0)
+    ? results[primaryIndex].effectiveCoreOD
+    : coreOD;
+
   result.innerHTML = `
-    <div style="margin-top:15px">
+    <div style="margin-top:18px;display:flex;flex-direction:column;gap:18px;">
 
-      <b>Material:</b> ${activeMaterial || "-"}<br><br>
+      <!-- ── GEOMETRY SECTION ── -->
+      <div class="info-grid">
+        <div class="info-grid-header">GEOMETRY</div>
 
-      <b>Heater OD:</b> ${heaterOD.toFixed(2)} mm<br>
-      <b>Heater Length (Total):</b> ${heaterLength.toFixed(2)} mm<br>
-      <b>Core Length (Winding Area):</b> ${coreLength.toFixed(2)} mm<br>
-      <b>Pipe Thickness:</b> ${pipeThickness.toFixed(2)} mm ${autoThicknessCheckbox.checked ? '(Auto)' : '(Manual)'}<br>
-      <b>Pipe OD:</b> ${pipeOD.toFixed(2)} mm ${autoPipeODCheckbox.checked ? '(Auto)' : '(Manual)'}<br>
-      <b>Insulation Thickness:</b> ${insulationThickness.toFixed(1)} mm
-        <i style="color:var(--muted);font-size:11px">(watt density rule: ≥9 W/cm²→2mm | &lt;8→1.5mm | 8–9→1.7mm)</i><br>
-      <b>Core OD (For Turns Circumference):</b> ${coreOD.toFixed(2)} mm
-        ${!isCoreODAuto
-          ? '<span style="background:#78350f;color:#fcd34d;font-size:10px;padding:1px 6px;border-radius:9px;margin-left:4px">Manual Override</span>'
-          : ''
-        }<br><br>
+        <div class="info-label">Material</div>
+        <div class="info-value">${(activeMaterial || '–').toUpperCase()}</div>
 
-      <b>Surface Area:</b> ${surfaceAreaCM2.toFixed(2)} cm² <i style="color:var(--muted);font-size:11px">(using Heater Length)</i><br>
-      <b>Watt Density:</b> ${wattDensity.toFixed(2)} W/cm²<br><br>
+        <div class="info-label">Heater OD (= Pipe OD)</div>
+        <div class="info-value">${heaterOD.toFixed(2)} mm</div>
 
-      <b>Base Resistance:</b> ${baseResistance.toFixed(2)} Ω<br>
-      <b>Final Resistance (+${extra}%):</b> ${finalResistance.toFixed(2)} Ω<br><br>
+        <div class="info-label">Pipe Thickness</div>
+        <div class="info-value">${pipeThickness.toFixed(2)} mm <span class="info-tag">${autoThicknessCheckbox.checked ? 'Auto' : 'Manual'}</span></div>
 
-      <i style="color:var(--muted);font-size:12px">
-        📐 Pipe OD Auto Rule: ≤10mm → +1.5mm | ≤15mm → +2mm | ≤25mm → +2.5mm | >25mm → +3mm<br>
-        📊 Turns = Wire Length ÷ (π × Core OD) | Pitch = Core Length ÷ Turns
-      </i>
+        <div class="info-label">Pipe ID</div>
+        <div class="info-value">${pipeID.toFixed(2)} mm <span class="info-note">= Heater OD − 2 × Pipe Thickness</span></div>
+
+        <div class="info-label">Heater Length (Total)</div>
+        <div class="info-value">${heaterLength.toFixed(2)} mm</div>
+
+        <div class="info-label">Core Length (Winding Area)</div>
+        <div class="info-value">${coreLength.toFixed(2)} mm</div>
+
+        <div class="info-label">Pipe OD (Shell)</div>
+        <div class="info-value">${pipeOD.toFixed(2)} mm <span class="info-tag">${autoPipeODCheckbox.checked ? 'Auto' : 'Manual'}</span></div>
+
+        <div class="info-label">Insulation Thickness</div>
+        <div class="info-value">${insulationThickness.toFixed(1)} mm × 2 sides <span class="info-note">≥9 W/cm²→2 mm | &lt;8→1.5 mm | 8–9→1.7 mm</span></div>
+
+        <div class="info-label">Core OD</div>
+        <div class="info-value">${displayCoreOD > 0 ? displayCoreOD.toFixed(2) + ' mm' : '–'}
+          ${!isCoreODAuto ? '<span class="info-tag info-tag--warn">Manual Override</span>' : ''}
+        </div>
+      </div>
+
+      <!-- ── ELECTRICAL SECTION ── -->
+      <div class="info-grid">
+        <div class="info-grid-header">ELECTRICAL</div>
+
+        <div class="info-label">Surface Area</div>
+        <div class="info-value">${surfaceAreaCM2.toFixed(2)} cm²</div>
+
+        <div class="info-label">Watt Density</div>
+        <div class="info-value">${wattDensity.toFixed(2)} W/cm²</div>
+
+        <div class="info-label">Base Resistance</div>
+        <div class="info-value">${baseResistance.toFixed(2)} Ω</div>
+
+        <div class="info-label">Final Resistance (+${extra}%)</div>
+        <div class="info-value">${finalResistance.toFixed(2)} Ω</div>
+      </div>
+
     </div>
 
     <div class="table-wrapper">
@@ -486,6 +578,7 @@ function calculate() {
           <th>Thickness (mm)</th>
           <th>Ω / m</th>
           <th>Wire Length (m)</th>
+          ${isCoreODAuto ? '<th>Core OD (mm)</th>' : ''}
           <th>Turns</th>
           <th>Pitch (mm)</th>
           <th>2 × Thickness</th>
@@ -503,11 +596,12 @@ function calculate() {
             <td>${r.swg}</td>
             <td>${r.thickness.toFixed(3)}</td>
             <td>${r.ohm.toFixed(3)}</td>
-            <td>${r.wireLengthMeters.toFixed(2)}</td>
-            <td>${r.turns.toFixed(0)}</td>
-            <td>${r.pitch.toFixed(3)}</td>
+            <td>${r.invalidGeometry ? '–' : r.wireLengthMeters.toFixed(2)}</td>
+            ${isCoreODAuto ? `<td style="${r.invalidGeometry ? 'color:#ef4444;font-weight:bold' : ''}">${r.invalidGeometry ? '⚠ ≤0' : r.effectiveCoreOD.toFixed(2)}</td>` : ''}
+            <td>${r.invalidGeometry ? '–' : r.turns.toFixed(0)}</td>
+            <td>${r.invalidGeometry ? '–' : r.pitch.toFixed(3)}</td>
             <td>${r.idealPitch.toFixed(3)}</td>
-            <td>${r.pass ? "✓ PASS" : "✗ FAIL"}</td>
+            <td>${r.invalidGeometry ? '<span style="color:#ef4444">⚠ Invalid Geometry</span>' : r.pass ? "✓ PASS" : "✗ FAIL"}</td>
           </tr>
         `).join("")}
       </table>
