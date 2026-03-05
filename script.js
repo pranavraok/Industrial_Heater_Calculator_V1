@@ -16,6 +16,12 @@ const STANDARD_CORE_SIZES = [
   15.5, 16, 18, 21.3
 ];
 
+/* Sorted available pipe OD stock sizes (mm) */
+const PIPE_OD_SIZES = [
+  9.5, 10.5, 11, 12.7, 13.5, 14, 14.5, 15.5, 15.8,
+  17.5, 18, 18.5, 18.8, 20, 21.4, 27
+];
+
 /* Stock pipe inventory – each entry is { od, thickness } in mm */
 const PIPE_INVENTORY = [
   { od: 15.8, thickness: 0.8 },
@@ -211,6 +217,22 @@ function getInsulationThickness(wattDensity) {
 }
 
 /**
+ * Returns the smallest available pipe OD (from PIPE_OD_SIZES) that is
+ * >= the required minimum based on heater OD and watt density:
+ *   wattDensity >= 9  → pipeRequired = heaterOD + 2
+ *   wattDensity <  9  → pipeRequired = heaterOD + 1.5
+ * Returns null if no stock size is large enough.
+ */
+function selectPipeODFromStock(heaterOD, wattDensity) {
+  const margin = wattDensity >= 9 ? 2 : 1.5;
+  const pipeRequired = heaterOD + margin;
+  for (const od of PIPE_OD_SIZES) {
+    if (od >= pipeRequired) return od;
+  }
+  return null;
+}
+
+/**
  * From STANDARD_CORE_SIZES, returns the largest size that is
  * less than or equal to `theoretical`.
  * Returns null if no standard size fits.
@@ -229,74 +251,55 @@ function selectStandardCoreOD(theoretical) {
 ========================================================= */
 
 function autoCalculateFields() {
-  
-  const W = Number(wattage.value);
-  const V = Number(voltage.value);
-  const heaterOD = Number(heaterODInput.value);
+
+  const W          = Number(wattage.value);
+  const heaterOD   = Number(heaterODInput.value);
   const heaterLength = Number(heaterLengthInput.value);
 
-  // Compute watt density once so it can be reused by all downstream rules
+  // Watt density – needed for both pipe OD margin and insulation rule
   let wattDensity = 0;
   if (W && heaterOD && heaterLength) {
     const surfaceAreaCM2 = (Math.PI * heaterOD * heaterLength) / 100;
     wattDensity = W / surfaceAreaCM2;
   }
 
-  // -------------------------------------------------------
-  // STOCK PIPE + CORE SELECTION (real-time preview)
-  //
-  // Case A – both Pipe OD and Pipe Thickness are AUTO:
-  //   Loop PIPE_INVENTORY; find first pipe whose geometry
-  //   yields a valid standard Core OD for the estimated SWG.
-  //
-  // Case B – Pipe values are MANUAL, only Core OD is AUTO:
-  //   Use entered pipe values; snap Core OD to standard list.
-  // -------------------------------------------------------
-
-  const bothPipeAuto = autoPipeODCheckbox.checked && autoThicknessCheckbox.checked;
-
-  if (bothPipeAuto && autoCoreODCheckbox.checked && wattDensity && wireData.length && W) {
-
-    const insulationThickness = getInsulationThickness(wattDensity);
-    const startEntry = wireData.find(w => W >= w.minw && W <= w.maxw);
-
-    if (startEntry) {
-      let pickedPipe = null;
-      let pickedCoreOD = null;
-
-      for (const pipe of PIPE_INVENTORY) {
-        const pid = pipe.od - 2 * pipe.thickness;
-        if (pid <= 0) continue;
-        const theoretical = pid - 2 * startEntry.thickness - 2 * insulationThickness;
-        if (theoretical <= 0) continue;
-        const snapped = selectStandardCoreOD(theoretical);
-        if (snapped !== null) { pickedPipe = pipe; pickedCoreOD = snapped; break; }
-      }
-
-      if (pickedPipe) {
-        const pipeIDPreview = pickedPipe.od - 2 * pickedPipe.thickness;
-        const theoretical   = pipeIDPreview - 2 * startEntry.thickness - 2 * insulationThickness;
-        pipeODInput.value        = pickedPipe.od;
-        pipeThicknessInput.value = pickedPipe.thickness;
-        coreODInput.value        = pickedCoreOD;
-        coreODStatusEl.innerHTML =
-          `<div class="cs-row"><span class="cs-key">Pipe ID</span><span class="cs-val">${pipeIDPreview.toFixed(2)} mm</span></div>` +
-          `<div class="cs-row"><span class="cs-key">Theoretical Core OD</span><span class="cs-val">${theoretical.toFixed(2)} mm</span></div>` +
-          `<div class="cs-row"><span class="cs-key">Insulation</span><span class="cs-val">${insulationThickness.toFixed(1)} mm × 2 sides</span></div>` +
-          `<div class="cs-row cs-ok">✓ Stock pipe selected</div>`;
+  // ── STEP 1: Pipe OD auto-selection ──────────────────────────────────
+  // Rule: pipeRequired = heaterOD + 2   (wattDensity >= 9)
+  //                    = heaterOD + 1.5  (wattDensity <  9)
+  // Pick the smallest OD from PIPE_OD_SIZES that is >= pipeRequired.
+  // Manual override: user unchecks Auto checkbox and types a value.
+  // ─────────────────────────────────────────────────────────────────────
+  if (autoPipeODCheckbox.checked) {
+    if (heaterOD && wattDensity) {
+      const selectedOD = selectPipeODFromStock(heaterOD, wattDensity);
+      if (selectedOD !== null) {
+        pipeODInput.value = selectedOD;
       } else {
-        pipeODInput.value        = '';
-        pipeThicknessInput.value = '';
-        coreODInput.value        = '';
-        coreODStatusEl.innerHTML = '<div class="cs-row cs-err">⚠ No valid pipe + core combination found in stock</div>';
+        pipeODInput.value = '';
       }
     } else {
-      coreODStatusEl.textContent = '';
+      pipeODInput.value = '';
     }
+  }
 
-  } else if (autoCoreODCheckbox.checked && wattDensity && wireData.length && W) {
+  // ── STEP 2: Pipe Thickness auto-selection ───────────────────────────
+  // Look up the selected pipe OD in PIPE_INVENTORY to get its thickness.
+  // ─────────────────────────────────────────────────────────────────────
+  if (autoThicknessCheckbox.checked) {
+    const pipeODVal = Number(pipeODInput.value);
+    if (pipeODVal > 0) {
+      const matchingPipe = PIPE_INVENTORY.find(p => p.od === pipeODVal);
+      pipeThicknessInput.value = matchingPipe ? matchingPipe.thickness : '';
+    } else {
+      pipeThicknessInput.value = '';
+    }
+  }
 
-    // Case B: pipe values are manual – only Core OD auto
+  // ── STEP 3: Core OD auto-selection (logic unchanged) ────────────────
+  // Uses pipe OD + thickness already resolved above (or manually entered).
+  // ─────────────────────────────────────────────────────────────────────
+  if (autoCoreODCheckbox.checked && wattDensity && wireData.length && W) {
+
     const pipeThicknessVal = Number(pipeThicknessInput.value);
     const pipeODVal        = Number(pipeODInput.value) || heaterOD;
 
@@ -321,7 +324,9 @@ function autoCalculateFields() {
               `<div class="cs-row cs-note">Theoretical: ${theoreticalCoreOD.toFixed(2)} mm – smallest stock is 3.8 mm</div>`;
           } else {
             coreODInput.value = standardCoreOD;
+            const margin = wattDensity >= 9 ? 2 : 1.5;
             coreODStatusEl.innerHTML =
+              `<div class="cs-row"><span class="cs-key">Pipe OD selected</span><span class="cs-val">${pipeODVal} mm (heaterOD + ${margin})</span></div>` +
               `<div class="cs-row"><span class="cs-key">Pipe ID</span><span class="cs-val">${pipeIDPreview.toFixed(2)} mm</span></div>` +
               `<div class="cs-row"><span class="cs-key">Theoretical Core OD</span><span class="cs-val">${theoreticalCoreOD.toFixed(2)} mm</span></div>` +
               `<div class="cs-row"><span class="cs-key">Insulation</span><span class="cs-val">${insulationThickness.toFixed(1)} mm × 2 sides</span></div>` +
@@ -331,6 +336,9 @@ function autoCalculateFields() {
       } else {
         coreODStatusEl.textContent = '';
       }
+    } else if (autoPipeODCheckbox.checked && Number(pipeODInput.value) > 0) {
+      // Pipe OD found but no matching thickness in inventory
+      coreODStatusEl.innerHTML = '<div class="cs-row cs-err">⚠ No thickness found in stock for selected pipe OD – enter manually</div>';
     }
   }
 }
@@ -418,6 +426,10 @@ function calculate() {
   const insulationThickness = getInsulationThickness(wattDensity);
   const isCoreODAuto = autoCoreODCheckbox && autoCoreODCheckbox.checked;
 
+  // Minimum pipe OD required by the insulation clearance rule
+  const pipeODMargin   = wattDensity >= 9 ? 2 : 1.5;
+  const pipeODRequired = heaterOD + pipeODMargin;
+
   /* =====================================================
      STEP 2: GET PIPE THICKNESS (ALREADY AUTO-FILLED OR MANUAL)
   ===================================================== */
@@ -450,6 +462,10 @@ function calculate() {
   // Pipe ID = Pipe OD − (2 × Pipe Thickness)
   // In auto mode pipeOD comes from the stock inventory selection.
   const pipeID = pipeOD - (2 * pipeThickness);
+
+  // Resolve the matching stock pipe entry ONCE – used for display and per-SWG core calc.
+  // The pipe never changes during SWG iteration.
+  const autoSelectedPipe = PIPE_INVENTORY.find(p => p.od === pipeOD) || null;
 
   /* =====================================================
      STEP 4: RESISTANCE CALCULATION
@@ -484,48 +500,33 @@ function calculate() {
 
     const w = wireData[i];
 
-    /* ---- PER-SWG PIPE + CORE SELECTION ───────────────────────────────
-       Auto mode : loop PIPE_INVENTORY to find the first pipe that:
-                     (a) produces a theoretical CoreOD > 0
-                     (b) snaps to a standard core size
-                     (c) pitch validation passes for this SWG
+    /* ---- PER-SWG CORE SELECTION ──────────────────────────────────────
+       Auto mode : pipe is FIXED (selected once via selectPipeODFromStock
+                   before this loop). Only the core OD is re-snapped per
+                   SWG because wire thickness varies between gauges.
        Manual mode: use the user-entered pipe OD / Core OD unchanged.
     ─────────────────────────────────────────────────────────────────── */
+    // Pipe is fixed for ALL SWG iterations – selected once via selectPipeODFromStock()
     let effectiveCoreOD;
-    let selectedPipe = null;
+    let selectedPipe = isCoreODAuto ? autoSelectedPipe : null;
     let invalidGeometry = false;
 
     if (isCoreODAuto) {
 
-      for (const pipe of PIPE_INVENTORY) {
-        const thisPipeID = pipe.od - 2 * pipe.thickness;
-        if (thisPipeID <= 0) continue;
+      // Fixed pipe geometry – pipeOD and pipeThickness never change between iterations
+      const theoreticalCoreOD = pipeID - 2 * w.thickness - 2 * insulationThickness;
 
-        const theoretical = thisPipeID - 2 * w.thickness - 2 * insulationThickness;
-        if (theoretical <= 0) continue;
-
-        const snapped = selectStandardCoreOD(theoretical);
-        if (snapped === null) continue;
-
-        // Pre-validate pitch with this candidate
-        const wlMM_   = (finalResistance / w.ohm) * 1000;
-        const turns_  = wlMM_ / (Math.PI * snapped);
-        const pitch_  = coreLength / turns_;
-        const ip_     = 2 * w.thickness;
-        let passes = false;
-        if (w.swg >= 22 && w.swg <= 32) passes = pitch_ >= ip_ * 0.98;
-        else if (w.swg >= 33 && w.swg <= 45) passes = pitch_ >= ip_;
-
-        if (passes) {
-          selectedPipe    = pipe;
-          effectiveCoreOD = snapped;
-          break;
-        }
-      }
-
-      if (selectedPipe === null) {
+      if (!autoSelectedPipe || theoreticalCoreOD <= 0) {
         invalidGeometry = true;
         effectiveCoreOD = 0;
+      } else {
+        const snapped = selectStandardCoreOD(theoreticalCoreOD);
+        if (snapped === null) {
+          invalidGeometry = true;
+          effectiveCoreOD = 0;
+        } else {
+          effectiveCoreOD = snapped;
+        }
       }
 
     } else {
@@ -625,9 +626,13 @@ function calculate() {
         <div class="info-label">Heater OD</div>
         <div class="info-value">${heaterOD.toFixed(2)} mm <span class="info-note">(watt density reference)</span></div>
 
-        <div class="info-label">Selected Pipe OD</div>
+        <div class="info-label">Required Pipe OD</div>
+        <div class="info-value">${pipeODRequired.toFixed(2)} mm <span class="info-note">= Heater OD + ${pipeODMargin} mm (${wattDensity >= 9 ? '≥9 W/cm²' : '<9 W/cm²'})</span></div>
+
+        <div class="info-label">Selected Stock Pipe</div>
         <div class="info-value">${displayPipeOD.toFixed(2)} mm
           <span class="info-tag">${isCoreODAuto ? 'Stock' : 'Manual'}</span>
+          <span class="info-note">${isCoreODAuto ? '(smallest stock OD ≥ ' + pipeODRequired.toFixed(2) + ' mm)' : ''}</span>
         </div>
 
         <div class="info-label">Pipe Wall Thickness</div>
