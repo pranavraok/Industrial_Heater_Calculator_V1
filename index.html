@@ -8,32 +8,36 @@
 </head>
 <body>
 
-<h1>Industrial Heater Coil Calculator</h1>
-<p class="subtitle">ELECTRO GROUP OF INDUSTRIES</p>
+<main class="app-shell">
+
+<header class="app-header">
+  <h1>Industrial Heater Coil Calculator</h1>
+  <p class="subtitle">ELECTRO GROUP OF INDUSTRIES</p>
+</header>
 
 <!-- MATERIAL SELECTION -->
-<div id="materialSelect" class="landing">
-  <button onclick="selectMaterial('nichrome')">Nichrome</button>
-  <button onclick="selectMaterial('kanthal')">Kanthal D</button>
+<div id="materialSelect" class="choice-grid app-view">
+  <button class="choice-btn" onclick="selectMaterial('nichrome')">Nichrome</button>
+  <button class="choice-btn" onclick="selectMaterial('kanthal')">Kanthal D</button>
 </div>
 
 <!-- ACTION SELECTION -->
-<div id="landing" class="container hidden">
+<div id="landing" class="panel hidden">
 
   <div class="material-bar">
     <span id="materialLabel"></span>
     <button class="back-btn" onclick="backToMaterial()">Back</button>
   </div>
 
-  <div class="landing">
-    <button onclick="openCalculator()">Calculate Value</button>
-    <button onclick="openPassword()">Edit Database</button>
+  <div class="choice-grid">
+    <button class="choice-btn" onclick="openCalculator()">Calculate Value</button>
+    <button class="choice-btn" onclick="openPassword()">Edit Database</button>
   </div>
 
 </div>
 
 <!-- CALCULATOR -->
-<div id="calculator" class="container hidden">
+<div id="calculator" class="panel hidden">
 
   <div class="material-bar">
     <span id="materialLabelCalc"></span>
@@ -42,70 +46,70 @@
 
   <div class="form">
 
-    <div>
+    <div class="form-field">
       <label>Wattage (W)</label>
-      <input id="wattage" type="number" placeholder="Enter wattage">
+      <input id="wattage" type="number" inputmode="decimal" placeholder="Enter wattage">
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Voltage (V)</label>
-      <input id="voltage" type="number" placeholder="Enter voltage">
+      <input id="voltage" type="number" inputmode="decimal" placeholder="Enter voltage">
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Heater OD (mm)</label>
-      <input id="heaterOD" type="number" placeholder="Enter heater diameter">
+      <input id="heaterOD" type="number" inputmode="decimal" placeholder="Enter heater diameter">
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Heater Length (mm)</label>
-      <input id="heaterLength" type="number" placeholder="Total heater length">
+      <input id="heaterLength" type="number" inputmode="decimal" placeholder="Total heater length">
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Core Length (mm)</label>
-      <input id="coreLength" type="number" placeholder="Winding length (excluding cold zones)">
+      <input id="coreLength" type="number" inputmode="decimal" placeholder="Winding length">
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Pipe Thickness (mm)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="pipeThickness" type="number" step="0.1" placeholder="Auto">
-        <label style="margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap">
+      <div class="field-inline">
+        <input id="pipeThickness" type="number" inputmode="decimal" step="0.1" placeholder="Auto">
+        <label class="switch">
           <input type="checkbox" id="autoThickness" checked onchange="toggleAutoThickness()"> Auto
         </label>
       </div>
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Pipe OD (mm)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="pipeOD" type="number" step="0.1" placeholder="Auto (stock OD)">
-        <label style="margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap">
+      <div class="field-inline">
+        <input id="pipeOD" type="number" inputmode="decimal" step="0.1" placeholder="Auto">
+        <label class="switch">
           <input type="checkbox" id="autoPipeOD" checked onchange="toggleAutoPipeOD()"> Auto
         </label>
       </div>
     </div>
 
-    <div>
+    <div class="form-field form-field--wide">
       <label>Core OD (mm)</label>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="coreOD" type="number" step="0.1" placeholder="Auto">
-        <label style="margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap">
+      <div class="field-inline">
+        <input id="coreOD" type="number" inputmode="decimal" step="0.1" placeholder="Auto">
+        <label class="switch">
           <input type="checkbox" id="autoCoreOD" checked onchange="toggleAutoCoreOD()"> Auto
         </label>
       </div>
       <div id="coreODStatus" class="core-od-status"></div>
     </div>
 
-    <div>
+    <div class="form-field">
       <label>Extra Resistance (%)</label>
-      <input id="extra" type="number" value="0">
+      <input id="extra" type="number" inputmode="decimal" value="0">
     </div>
 
   </div>
 
-  <button onclick="calculate()">Calculate</button>
+  <button class="primary-action" onclick="calculate()">Calculate</button>
 
   <div id="result"></div>
 
@@ -116,8 +120,8 @@
   <div class="modal-box">
     <h3>Enter Admin Password</h3>
     <input type="password" id="dbPassword">
-    <button onclick="checkPassword()">Enter</button>
-    <button onclick="closePassword()" style="background:#64748b;margin-top:10px">Cancel</button>
+    <button class="primary-action" onclick="checkPassword()">Enter</button>
+    <button class="secondary-action" onclick="closePassword()">Cancel</button>
     <p id="passError"></p>
   </div>
 </div>
@@ -127,12 +131,12 @@
   <div class="modal-box">
     <h3 id="saveTitle">Status</h3>
     <p id="saveMessage"></p>
-    <button onclick="closeSaveModal()">OK</button>
+    <button class="primary-action" onclick="closeSaveModal()">OK</button>
   </div>
 </div>
 
 <!-- DATABASE EDITOR -->
-<div id="dbEditor" class="container hidden">
+<div id="dbEditor" class="panel hidden">
 
   <div class="material-bar">
     <h3 id="dbTitle">Edit Database</h3>
@@ -143,9 +147,11 @@
     <table id="dbTable"></table>
   </div>
 
-  <button id="saveBtn" onclick="saveDatabase()">Save Changes</button>
+  <button id="saveBtn" class="primary-action" onclick="saveDatabase()">Save Changes</button>
 
 </div>
+
+</main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="script.js"></script>

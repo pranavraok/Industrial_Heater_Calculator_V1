@@ -150,8 +150,8 @@ function renderScreen(screen, material = activeMaterial, options = {}) {
     if (activeTable && loadedTable !== activeTable) {
       const table = document.getElementById("dbTable");
       table.innerHTML = "<tr><td>Loading database...</td></tr>";
-      loadDatabase().then(() => {
-        if (currentScreen === "database") populateDBTable();
+      loadDatabase().then((loaded) => {
+        if (loaded && currentScreen === "database") populateDBTable();
       });
       return;
     }
@@ -217,8 +217,8 @@ async function loadDatabase() {
     .order("swg");
 
   if (error) {
-    alert("Failed to load database");
     console.error(error);
+    showSaveModal("Error", "Failed to load database.");
     return false;
   }
 
@@ -275,7 +275,7 @@ function toggleAutoCoreOD() {
     autoCalculateFields();
   } else {
     coreODOverridden = true;
-    coreODStatusEl.innerHTML = '<div class="cs-row cs-warn">⚠ Manual Override Active</div>';
+    coreODStatusEl.innerHTML = '<div class="cs-row cs-warn">Manual override active</div>';
   }
 }
 
@@ -456,7 +456,7 @@ function autoCalculateFields() {
       if (!selection) {
         coreODInput.value = '';
         coreODStatusEl.innerHTML =
-          '<div class="cs-row cs-err">⚠ No valid SWG + stock core combination found for current geometry</div>';
+          '<div class="cs-row cs-err">No valid SWG + stock core combination found</div>';
       } else {
         coreODInput.value = selection.standardCoreOD;
         const margin = wattDensity >= 9 ? 2 : 1.5;
@@ -465,13 +465,13 @@ function autoCalculateFields() {
           `<div class="cs-row"><span class="cs-key">Pipe ID</span><span class="cs-val">${pipeIDPreview.toFixed(2)} mm</span></div>` +
           `<div class="cs-row"><span class="cs-key">SWG used</span><span class="cs-val">${selection.wire.swg} (${selection.wire.thickness.toFixed(3)} mm)</span></div>` +
           `<div class="cs-row"><span class="cs-key">Theoretical Core OD</span><span class="cs-val">${selection.theoreticalCoreOD.toFixed(2)} mm</span></div>` +
-          `<div class="cs-row"><span class="cs-key">Insulation</span><span class="cs-val">${insulationThickness.toFixed(1)} mm × 2 sides</span></div>` +
-          `<div class="cs-row cs-ok">✓ Standard size selected (${selection.standardCoreOD.toFixed(2)} mm)</div>`;
+          `<div class="cs-row"><span class="cs-key">Insulation</span><span class="cs-val">${insulationThickness.toFixed(1)} mm x 2 sides</span></div>` +
+          `<div class="cs-row cs-ok">Standard size selected (${selection.standardCoreOD.toFixed(2)} mm)</div>`;
       }
 
     } else if (autoPipeODCheckbox.checked && Number(pipeODInput.value) > 0) {
       // Pipe OD found but no matching thickness in inventory
-      coreODStatusEl.innerHTML = '<div class="cs-row cs-err">⚠ No thickness found in stock for selected pipe OD – enter manually</div>';
+      coreODStatusEl.innerHTML = '<div class="cs-row cs-err">No thickness found in stock for selected pipe OD</div>';
     }
   }
 }
@@ -497,9 +497,13 @@ function setupAutoCalculation() {
       // User typed into the field — switch to manual override
       autoCoreODCheckbox.checked = false;
       coreODOverridden = true;
-      coreODStatusEl.innerHTML = '<div class="cs-row cs-warn">⚠ Manual Override Active</div>';
+      coreODStatusEl.innerHTML = '<div class="cs-row cs-warn">Manual override active</div>';
     }
   });
+
+  toggleAutoThickness();
+  toggleAutoPipeOD();
+  toggleAutoCoreOD();
 }
 
 // Initialize auto-calculation on page load
@@ -535,6 +539,34 @@ function setupHistoryNavigation() {
 
 setupHistoryNavigation();
 
+function showResultError(message) {
+  result.innerHTML = `<div class="alert">${message}</div>`;
+}
+
+function setupModalShortcuts() {
+  const dbPasswordInput = document.getElementById("dbPassword");
+
+  dbPasswordInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") checkPassword();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!passwordModal.classList.contains("hidden")) closePassword();
+    if (!saveModal.classList.contains("hidden")) closeSaveModal();
+  });
+
+  passwordModal.addEventListener("click", (event) => {
+    if (event.target === passwordModal) closePassword();
+  });
+
+  saveModal.addEventListener("click", (event) => {
+    if (event.target === saveModal) closeSaveModal();
+  });
+}
+
+setupModalShortcuts();
+
 /* =========================================================
    MAIN CALCULATION
 ========================================================= */
@@ -551,14 +583,12 @@ function calculate() {
   /* ---------------- VALIDATION ---------------- */
 
   if (!wireData.length) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ Database not loaded.</p>";
+    showResultError("Database not loaded.");
     return;
   }
 
   if (!W || !V || !heaterOD || !heaterLength || !coreLength) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ Fill all required inputs</p>";
+    showResultError("Fill all required inputs.");
     return;
   }
 
@@ -566,11 +596,9 @@ function calculate() {
 
   if (!coreOD || coreOD <= 0) {
     if (autoCoreODCheckbox && autoCoreODCheckbox.checked) {
-      result.innerHTML =
-        "<p style='color:#ef4444'>❌ No valid stock pipe + core combination found – adjust inputs or check stock inventory</p>";
+      showResultError("No valid stock pipe + core combination found.");
     } else {
-      result.innerHTML =
-        "<p style='color:#ef4444'>❌ Please enter Core OD (or enable Auto mode)</p>";
+      showResultError("Enter Core OD or enable Auto mode.");
     }
     return;
   }
@@ -602,9 +630,11 @@ function calculate() {
   const pipeThickness = Number(pipeThicknessInput.value);
   
   if (!pipeThickness) {
-    result.innerHTML = autoThicknessCheckbox.checked
-      ? "<p style='color:#ef4444'>❌ No valid stock pipe found – check inventory or adjust wattage</p>"
-      : "<p style='color:#ef4444'>❌ Please enter pipe thickness</p>";
+    showResultError(
+      autoThicknessCheckbox.checked
+        ? "No valid stock pipe found."
+        : "Enter pipe thickness."
+    );
     return;
   }
 
@@ -615,9 +645,11 @@ function calculate() {
   const pipeOD = Number(pipeODInput.value);
   
   if (!pipeOD) {
-    result.innerHTML = autoPipeODCheckbox.checked
-      ? "<p style='color:#ef4444'>❌ No valid stock pipe found – check inventory or adjust wattage</p>"
-      : "<p style='color:#ef4444'>❌ Please enter pipe OD</p>";
+    showResultError(
+      autoPipeODCheckbox.checked
+        ? "No valid stock pipe found."
+        : "Enter pipe OD."
+    );
     return;
   }
 
@@ -648,8 +680,7 @@ function calculate() {
   );
 
   if (startIndex === -1) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ No wire found for this wattage range</p>";
+    showResultError("No wire found for this wattage range.");
     return;
   }
 
@@ -754,8 +785,7 @@ function calculate() {
 
   /* ---- All evaluated gauges have invalid geometry → hard stop ---- */
   if (!found && results.length > 0 && results.every(r => r.invalidGeometry)) {
-    result.innerHTML =
-      "<p style='color:#ef4444'>❌ No valid stock pipe + core combination found for this wattage and geometry</p>";
+    showResultError("No valid stock pipe + core combination found.");
     return;
   }
 
@@ -773,67 +803,31 @@ function calculate() {
   const displayCoreOD        = (isCoreODAuto && primaryResult) ? primaryResult.effectiveCoreOD : coreOD;
 
   result.innerHTML = `
-    <div style="margin-top:18px;display:flex;flex-direction:column;gap:18px;">
-
-      <!-- ── GEOMETRY SECTION ── -->
+    <div class="result-stack">
+      <div class="result-grid">
       <div class="info-grid">
-        <div class="info-grid-header">GEOMETRY</div>
-
-        <div class="info-label">Material</div>
-        <div class="info-value">${(activeMaterial || '–').toUpperCase()}</div>
-
-        <div class="info-label">Heater OD</div>
-        <div class="info-value">${heaterOD.toFixed(2)} mm <span class="info-note">(watt density reference)</span></div>
-
-        <div class="info-label">Required Pipe OD</div>
-        <div class="info-value">${pipeODRequired.toFixed(2)} mm <span class="info-note">= Heater OD + ${pipeODMargin} mm (${wattDensity >= 9 ? '≥9 W/cm²' : '<9 W/cm²'})</span></div>
-
-        <div class="info-label">Selected Stock Pipe</div>
-        <div class="info-value">${displayPipeOD.toFixed(2)} mm
-          <span class="info-tag">${isCoreODAuto ? 'Stock' : 'Manual'}</span>
-          <span class="info-note">${isCoreODAuto ? '(smallest stock OD ≥ ' + pipeODRequired.toFixed(2) + ' mm)' : ''}</span>
-        </div>
-
-        <div class="info-label">Pipe Wall Thickness</div>
-        <div class="info-value">${displayPipeThickness.toFixed(2)} mm
-          <span class="info-tag">${isCoreODAuto ? 'Stock' : (autoThicknessCheckbox.checked ? 'Auto' : 'Manual')}</span>
-        </div>
-
-        <div class="info-label">Pipe ID</div>
-        <div class="info-value">${displayPipeID.toFixed(2)} mm <span class="info-note">= Pipe OD − 2 × Wall Thickness</span></div>
-
-        <div class="info-label">Heater Length (Total)</div>
-        <div class="info-value">${heaterLength.toFixed(2)} mm</div>
-
-        <div class="info-label">Core Length (Winding Area)</div>
-        <div class="info-value">${coreLength.toFixed(2)} mm</div>
-
-        <div class="info-label">Insulation Thickness</div>
-        <div class="info-value">${insulationThickness.toFixed(1)} mm × 2 sides <span class="info-note">≥9 W/cm²→2 mm | &lt;8→1.5 mm | 8–9→1.7 mm</span></div>
-
-        <div class="info-label">Core OD (Stock)</div>
-        <div class="info-value">${displayCoreOD > 0 ? displayCoreOD.toFixed(2) + ' mm' : '–'}
-          ${!isCoreODAuto ? '<span class="info-tag info-tag--warn">Manual Override</span>' : '<span class="info-tag">Standard</span>'}
-        </div>
+        <div class="info-grid-header">Geometry</div>
+        <div class="info-row"><div class="info-label">Material</div><div class="info-value">${(activeMaterial || '-').toUpperCase()}</div></div>
+        <div class="info-row"><div class="info-label">Heater OD</div><div class="info-value">${heaterOD.toFixed(2)} mm</div></div>
+        <div class="info-row"><div class="info-label">Pipe OD</div><div class="info-value">${displayPipeOD.toFixed(2)} mm <span class="info-tag">${isCoreODAuto ? 'Stock' : 'Manual'}</span></div></div>
+        <div class="info-row"><div class="info-label">Pipe Wall</div><div class="info-value">${displayPipeThickness.toFixed(2)} mm</div></div>
+        <div class="info-row"><div class="info-label">Pipe ID</div><div class="info-value">${displayPipeID.toFixed(2)} mm</div></div>
+        <div class="info-row"><div class="info-label">Core OD</div><div class="info-value">${displayCoreOD > 0 ? displayCoreOD.toFixed(2) + ' mm' : '-'} ${!isCoreODAuto ? '<span class="info-tag info-tag--warn">Manual</span>' : '<span class="info-tag">Auto</span>'}</div></div>
+        <div class="info-row"><div class="info-label">Core Length</div><div class="info-value">${coreLength.toFixed(2)} mm</div></div>
+        <div class="info-row"><div class="info-label">Insulation</div><div class="info-value">${insulationThickness.toFixed(1)} mm x 2</div></div>
       </div>
 
-      <!-- ── ELECTRICAL SECTION ── -->
       <div class="info-grid">
-        <div class="info-grid-header">ELECTRICAL</div>
-
-        <div class="info-label">Surface Area</div>
-        <div class="info-value">${surfaceAreaCM2.toFixed(2)} cm²</div>
-
-        <div class="info-label">Watt Density</div>
-        <div class="info-value">${wattDensity.toFixed(2)} W/cm²</div>
-
-        <div class="info-label">Base Resistance</div>
-        <div class="info-value">${baseResistance.toFixed(2)} Ω</div>
-
-        <div class="info-label">Final Resistance (+${extra}%)</div>
-        <div class="info-value">${finalResistance.toFixed(2)} Ω</div>
+        <div class="info-grid-header">Electrical</div>
+        <div class="info-row"><div class="info-label">Wattage</div><div class="info-value">${W.toFixed(2)} W</div></div>
+        <div class="info-row"><div class="info-label">Voltage</div><div class="info-value">${V.toFixed(2)} V</div></div>
+        <div class="info-row"><div class="info-label">Surface Area</div><div class="info-value">${surfaceAreaCM2.toFixed(2)} cm2</div></div>
+        <div class="info-row"><div class="info-label">Watt Density</div><div class="info-value">${wattDensity.toFixed(2)} W/cm2</div></div>
+        <div class="info-row"><div class="info-label">Base Resistance</div><div class="info-value">${baseResistance.toFixed(2)} Ohm</div></div>
+        <div class="info-row"><div class="info-label">Final Resistance</div><div class="info-value">${finalResistance.toFixed(2)} Ohm</div></div>
+        <div class="info-row"><div class="info-label">Extra</div><div class="info-value">${extra.toFixed(2)}%</div></div>
       </div>
-
+      </div>
     </div>
 
     <div class="table-wrapper">
@@ -841,12 +835,12 @@ function calculate() {
         <tr>
           <th>SWG</th>
           <th>Thickness (mm)</th>
-          <th>Ω / m</th>
+          <th>Ohm / m</th>
           <th>Wire Length (m)</th>
           ${isCoreODAuto ? '<th>Pipe OD (mm)</th><th>Core OD (mm)</th>' : ''}
           <th>Turns</th>
           <th>Pitch (mm)</th>
-          <th>2 × Thickness</th>
+          <th>2 x Thickness</th>
           <th>Status</th>
         </tr>
 
@@ -861,15 +855,21 @@ function calculate() {
             <td>${r.swg}</td>
             <td>${r.thickness.toFixed(3)}</td>
             <td>${r.ohm.toFixed(3)}</td>
-            <td>${r.invalidGeometry ? '–' : r.wireLengthMeters.toFixed(2)}</td>
+            <td>${r.invalidGeometry ? '-' : r.wireLengthMeters.toFixed(2)}</td>
             ${isCoreODAuto ? `
-              <td style="${r.invalidGeometry ? 'color:#ef4444' : ''}">${r.invalidGeometry || !r.selectedPipe ? '⚠ –' : r.selectedPipe.od.toFixed(1) + ' / ' + r.selectedPipe.thickness.toFixed(1)}</td>
-              <td style="${r.invalidGeometry ? 'color:#ef4444;font-weight:bold' : ''}">${r.invalidGeometry ? '⚠ –' : r.effectiveCoreOD.toFixed(2)}</td>
+              <td>${r.invalidGeometry || !r.selectedPipe ? '-' : r.selectedPipe.od.toFixed(1) + ' / ' + r.selectedPipe.thickness.toFixed(1)}</td>
+              <td>${r.invalidGeometry ? '-' : r.effectiveCoreOD.toFixed(2)}</td>
             ` : ''}
-            <td>${r.invalidGeometry ? '–' : r.turns.toFixed(0)}</td>
-            <td>${r.invalidGeometry ? '–' : r.pitch.toFixed(3)}</td>
+            <td>${r.invalidGeometry ? '-' : r.turns.toFixed(0)}</td>
+            <td>${r.invalidGeometry ? '-' : r.pitch.toFixed(3)}</td>
             <td>${r.idealPitch.toFixed(3)}</td>
-            <td>${r.invalidGeometry ? '<span style="color:#ef4444">⚠ No Stock Fit</span>' : r.pass ? "✓ PASS" : "✗ FAIL"}</td>
+            <td>${
+              r.invalidGeometry
+                ? '<span class="status-pill status-pill--warn">NO FIT</span>'
+                : r.pass
+                ? '<span class="status-pill status-pill--ok">PASS</span>'
+                : '<span class="status-pill status-pill--fail">FAIL</span>'
+            }</td>
           </tr>
         `).join("")}
       </table>
@@ -885,6 +885,7 @@ function openPassword() {
   passwordModal.classList.remove("hidden");
   document.getElementById("dbPassword").value = "";
   document.getElementById("passError").innerText = "";
+  setTimeout(() => document.getElementById("dbPassword").focus(), 0);
 }
 
 function closePassword() {
@@ -899,8 +900,7 @@ function checkPassword() {
     closePassword();
     openDatabase();
   } else {
-    passError.innerText = "❌ Incorrect password";
-    passError.style.color = "#ef4444";
+    passError.innerText = "Incorrect password";
   }
 }
 
@@ -925,7 +925,7 @@ function populateDBTable() {
       <tr>
         <th>SWG</th>
         <th>Thickness (mm)</th>
-        <th>Ω / m</th>
+        <th>Ohm / m</th>
         <th>Min Wattage</th>
         <th>Max Wattage</th>
       </tr>
@@ -961,6 +961,24 @@ function populateDBTable() {
 
 async function saveDatabase() {
   const saveBtn = document.getElementById("saveBtn");
+  const invalidRow = wireData.find((wire) =>
+    !Number.isFinite(Number(wire.swg)) ||
+    !Number.isFinite(Number(wire.thickness)) ||
+    !Number.isFinite(Number(wire.ohm)) ||
+    !Number.isFinite(Number(wire.minw)) ||
+    !Number.isFinite(Number(wire.maxw)) ||
+    Number(wire.swg) <= 0 ||
+    Number(wire.thickness) <= 0 ||
+    Number(wire.ohm) <= 0 ||
+    Number(wire.minw) < 0 ||
+    Number(wire.maxw) < Number(wire.minw)
+  );
+
+  if (invalidRow) {
+    showSaveModal("Check Values", "Fix database values before saving.");
+    return;
+  }
+
   saveBtn.disabled = true;
   saveBtn.innerText = "Saving...";
 
@@ -971,10 +989,10 @@ async function saveDatabase() {
 
     if (error) throw error;
 
-    showSaveModal("✅ Success", "Database saved successfully!");
+    showSaveModal("Saved", "Database saved successfully.");
   } catch (err) {
     console.error(err);
-    showSaveModal("❌ Error", "Failed to save database: " + err.message);
+    showSaveModal("Error", "Failed to save database: " + err.message);
   } finally {
     saveBtn.disabled = false;
     saveBtn.innerText = "Save Changes";
