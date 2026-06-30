@@ -6,8 +6,12 @@ let activeMaterial = null;
 let activeTable = null;
 let wireData = [];
 let coreODOverridden = false;
+let currentScreen = "material";
+let currentHistoryIndex = 0;
+let loadedTable = null;
 
 const ADMIN_PASSWORD = "electro123@";
+const APP_HISTORY_KEY = "heater-coil-calculator";
 
 /* Available standard core diameters (mm) – sorted ascending */
 const STANDARD_CORE_SIZES = [
@@ -96,8 +100,7 @@ const supabaseClient = window.supabase.createClient(
    MATERIAL SELECTION
 ========================================================= */
 
-function selectMaterial(type) {
-
+function setMaterialContext(type) {
   activeMaterial = type;
 
   activeTable =
@@ -115,18 +118,90 @@ function selectMaterial(type) {
   if (materialLabelCalc) {
     materialLabelCalc.innerText = labelText;
   }
-
-  materialSelect.classList.add("hidden");
-  landing.classList.remove("hidden");
-
-  loadDatabase();
 }
 
-function backToMaterial() {
+function renderScreen(screen, material = activeMaterial, options = {}) {
+  currentScreen = screen;
+
+  passwordModal.classList.add("hidden");
+  saveModal.classList.add("hidden");
+  materialSelect.classList.add("hidden");
   landing.classList.add("hidden");
   calculator.classList.add("hidden");
   dbEditor.classList.add("hidden");
-  materialSelect.classList.remove("hidden");
+
+  if (screen === "material" || !material) {
+    activeMaterial = null;
+    activeTable = null;
+    currentScreen = "material";
+    materialSelect.classList.remove("hidden");
+    return;
+  }
+
+  setMaterialContext(material);
+
+  if (screen === "landing") {
+    landing.classList.remove("hidden");
+  } else if (screen === "calculator") {
+    calculator.classList.remove("hidden");
+    if (options.clearResult) result.innerHTML = "";
+  } else if (screen === "database") {
+    dbEditor.classList.remove("hidden");
+    if (activeTable && loadedTable !== activeTable) {
+      const table = document.getElementById("dbTable");
+      table.innerHTML = "<tr><td>Loading database...</td></tr>";
+      loadDatabase().then(() => {
+        if (currentScreen === "database") populateDBTable();
+      });
+      return;
+    }
+
+    populateDBTable();
+  }
+
+  if (activeTable && loadedTable !== activeTable) {
+    loadDatabase();
+  }
+}
+
+function saveHistoryState(screen, material = activeMaterial, replace = false) {
+  const state = {
+    app: APP_HISTORY_KEY,
+    screen,
+    material: screen === "material" ? null : material,
+    index: replace ? currentHistoryIndex : currentHistoryIndex + 1
+  };
+
+  if (replace) {
+    window.history.replaceState(state, "", window.location.href);
+  } else {
+    window.history.pushState(state, "", window.location.href);
+  }
+
+  currentHistoryIndex = state.index;
+}
+
+function navigateTo(screen, material = activeMaterial, options = {}) {
+  saveHistoryState(screen, material, Boolean(options.replace));
+  renderScreen(screen, material, options);
+}
+
+function goBackTo(fallbackScreen) {
+  if (currentHistoryIndex > 0) {
+    window.history.back();
+    return;
+  }
+
+  navigateTo(fallbackScreen, activeMaterial, { replace: true });
+}
+
+function selectMaterial(type) {
+  setMaterialContext(type);
+  navigateTo("landing", type);
+}
+
+function backToMaterial() {
+  goBackTo("material");
 }
 
 /* =========================================================
@@ -134,19 +209,24 @@ function backToMaterial() {
 ========================================================= */
 
 async function loadDatabase() {
+  const tableToLoad = activeTable;
 
   const { data, error } = await supabaseClient
-    .from(activeTable)
+    .from(tableToLoad)
     .select("*")
     .order("swg");
 
   if (error) {
     alert("Failed to load database");
     console.error(error);
-    return;
+    return false;
   }
 
+  if (activeTable !== tableToLoad) return false;
+
   wireData = data;
+  loadedTable = tableToLoad;
+  return true;
 }
 
 /* =========================================================
@@ -154,15 +234,11 @@ async function loadDatabase() {
 ========================================================= */
 
 function openCalculator() {
-  landing.classList.add("hidden");
-  calculator.classList.remove("hidden");
-  result.innerHTML = "";
+  navigateTo("calculator", activeMaterial, { clearResult: true });
 }
 
 function backToLanding() {
-  calculator.classList.add("hidden");
-  dbEditor.classList.add("hidden");
-  landing.classList.remove("hidden");
+  goBackTo("landing");
 }
 
 /* =========================================================
@@ -428,6 +504,36 @@ function setupAutoCalculation() {
 
 // Initialize auto-calculation on page load
 setupAutoCalculation();
+
+/* =========================================================
+   BROWSER BACK/FORWARD SUPPORT
+========================================================= */
+
+function setupHistoryNavigation() {
+  const state = window.history.state;
+
+  if (state && state.app === APP_HISTORY_KEY) {
+    currentHistoryIndex = state.index || 0;
+    renderScreen(state.screen || "material", state.material);
+  } else {
+    saveHistoryState("material", null, true);
+  }
+
+  window.addEventListener("popstate", (event) => {
+    const nextState = event.state;
+
+    if (!nextState || nextState.app !== APP_HISTORY_KEY) {
+      currentHistoryIndex = 0;
+      renderScreen("material");
+      return;
+    }
+
+    currentHistoryIndex = nextState.index || 0;
+    renderScreen(nextState.screen || "material", nextState.material);
+  });
+}
+
+setupHistoryNavigation();
 
 /* =========================================================
    MAIN CALCULATION
@@ -803,9 +909,7 @@ function checkPassword() {
 ========================================================= */
 
 function openDatabase() {
-  landing.classList.add("hidden");
-  dbEditor.classList.remove("hidden");
-  populateDBTable();
+  navigateTo("database", activeMaterial);
 }
 
 function populateDBTable() {
