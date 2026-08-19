@@ -9,8 +9,8 @@ let coreODOverridden = false;
 let currentScreen = "material";
 let currentHistoryIndex = 0;
 let loadedTable = null;
+let adminPassword = "";
 
-const ADMIN_PASSWORD = "electro123@";
 const APP_HISTORY_KEY = "heater-coil-calculator";
 
 /* Available standard core diameters (mm) – sorted ascending */
@@ -85,16 +85,54 @@ const materialLabel = document.getElementById("materialLabel");
 const materialLabelCalc = document.getElementById("materialLabelCalc");
 
 /* =========================================================
-   SUPABASE CONNECTION
+   GOOGLE SHEETS CONNECTION
 ========================================================= */
 
-const SUPABASE_URL = "https://svyhzkjlaxttwpvsuupz.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2eWh6a2psYXh0dHdwdnN1dXB6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MTYzNjMsImV4cCI6MjA5ODM5MjM2M30.dgm8MIsWKh5JvPkru-xmMwuTLUSs1Ne6b0IrjI81UbY";
+// Paste the /exec URL created by deploying google-sheets/Code.gs as a Web App.
+const GOOGLE_SHEETS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxS99O2UMAulozNxPtyhhlI1qioxrwJxRWdMqSux_FQk-wELsZVWzrOeglKd5_6NNU-XA/exec";
 
-const supabaseClient = window.supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
-);
+function isGoogleSheetsConfigured() {
+  return /^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(
+    GOOGLE_SHEETS_WEB_APP_URL
+  );
+}
+
+async function sheetsApiRequest(action, payload = {}) {
+  if (!isGoogleSheetsConfigured()) {
+    throw new Error(
+      "Google Sheets is not connected yet. Add the Apps Script Web App URL in script.js."
+    );
+  }
+
+  const isRead = action === "read";
+  const options = isRead
+    ? { method: "GET", redirect: "follow", cache: "no-store" }
+    : {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action, ...payload })
+      };
+  const url = isRead
+    ? `${GOOGLE_SHEETS_WEB_APP_URL}?action=read&table=${encodeURIComponent(payload.table)}&t=${Date.now()}`
+    : GOOGLE_SHEETS_WEB_APP_URL;
+
+  const response = await fetch(url, options);
+  const responseText = await response.text();
+  let result;
+
+  try {
+    result = JSON.parse(responseText);
+  } catch (_error) {
+    throw new Error("Google Sheets returned an invalid response. Check the Web App deployment URL and access settings.");
+  }
+
+  if (!response.ok || !result.ok) {
+    throw new Error(result.error || `Google Sheets request failed (${response.status}).`);
+  }
+
+  return result;
+}
 
 /* =========================================================
    MATERIAL SELECTION
@@ -211,22 +249,19 @@ function backToMaterial() {
 async function loadDatabase() {
   const tableToLoad = activeTable;
 
-  const { data, error } = await supabaseClient
-    .from(tableToLoad)
-    .select("*")
-    .order("swg");
+  try {
+    const result = await sheetsApiRequest("read", { table: tableToLoad });
 
-  if (error) {
+    if (activeTable !== tableToLoad) return false;
+
+    wireData = result.data;
+    loadedTable = tableToLoad;
+    return true;
+  } catch (error) {
     console.error(error);
-    showSaveModal("Error", "Failed to load database.");
+    showSaveModal("Google Sheets Error", error.message);
     return false;
   }
-
-  if (activeTable !== tableToLoad) return false;
-
-  wireData = data;
-  loadedTable = tableToLoad;
-  return true;
 }
 
 /* =========================================================
@@ -892,15 +927,31 @@ function closePassword() {
   passwordModal.classList.add("hidden");
 }
 
-function checkPassword() {
+async function checkPassword() {
   const pass = document.getElementById("dbPassword").value;
   const passError = document.getElementById("passError");
+  const enterButton = passwordModal.querySelector(".primary-action");
 
-  if (pass === ADMIN_PASSWORD) {
+  if (!pass) {
+    passError.innerText = "Enter the admin password";
+    return;
+  }
+
+  enterButton.disabled = true;
+  enterButton.innerText = "Checking...";
+  passError.innerText = "";
+
+  try {
+    await sheetsApiRequest("authenticate", { password: pass });
+    adminPassword = pass;
     closePassword();
     openDatabase();
-  } else {
-    passError.innerText = "Incorrect password";
+  } catch (error) {
+    console.error(error);
+    passError.innerText = error.message;
+  } finally {
+    enterButton.disabled = false;
+    enterButton.innerText = "Enter";
   }
 }
 
@@ -983,16 +1034,16 @@ async function saveDatabase() {
   saveBtn.innerText = "Saving...";
 
   try {
-    const { error } = await supabaseClient
-      .from(activeTable)
-      .upsert(wireData, { onConflict: "id" });
+    await sheetsApiRequest("save", {
+      table: activeTable,
+      password: adminPassword,
+      data: wireData
+    });
 
-    if (error) throw error;
-
-    showSaveModal("Saved", "Database saved successfully.");
+    showSaveModal("Saved", "Google Sheet saved successfully.");
   } catch (err) {
     console.error(err);
-    showSaveModal("Error", "Failed to save database: " + err.message);
+    showSaveModal("Google Sheets Error", err.message);
   } finally {
     saveBtn.disabled = false;
     saveBtn.innerText = "Save Changes";
